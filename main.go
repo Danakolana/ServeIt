@@ -120,7 +120,7 @@ func withAuth(next http.HandlerFunc) http.HandlerFunc {
 		if password != "" {
 			user, pass, ok := r.BasicAuth()
 			if !ok || user != "admin" || pass != password {
-				w.Header().Set("WWW-Authenticate", `Basic realm="lanserve"`)
+				w.Header().Set("WWW-Authenticate", `Basic realm="ServeIt"`)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}

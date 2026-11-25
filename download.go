@@ -134,7 +134,7 @@ func streamStoredZip(w http.ResponseWriter, entries []zipEntry) (bool, error) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", `attachment; filename="lanserve.zip"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="ServeIt.zip"`)
 		w.Header().Set("Cache-Control", "no-store")
 		writer = zip.NewWriter(w)
 		started = true

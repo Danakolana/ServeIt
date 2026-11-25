@@ -148,7 +148,7 @@ func withAdminAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user, supplied, ok := r.BasicAuth()
 		if !ok || user != "admin" || supplied != adminPassword {
-			w.Header().Set("WWW-Authenticate", "Basic realm=\"lanserve super admin\"")
+			w.Header().Set("WWW-Authenticate", "Basic realm=\"ServeIt admin\"")
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -713,7 +713,7 @@ func renderStartup(port string, width int) string {
 	}
 	var out strings.Builder
 	out.WriteString("\n")
-	out.WriteString(startupBox("lanserve", facts, width))
+	out.WriteString(startupBox("ServeIt", facts, width))
 	out.WriteString("\n")
 	for _, base := range urls {
 		out.WriteString(renderAddressBlock(base, width))

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>lanserve – {{.CurrentPath}}</title>
+<title>ServeIt – {{.CurrentPath}}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:#f5f7fa;color:#1e293b;min-height:100vh}
@@ -27,6 +27,11 @@ th .sort{background:none;border:0;padding:0;color:inherit;letter-spacing:inherit
 th[aria-sort="ascending"] .sort::after{content:" \2191";color:#4f46e5}
 th[aria-sort="descending"] .sort::after{content:" \2193";color:#4f46e5}
 th.size .sort{display:block;width:100%;text-align:right}
+.credit{margin-top:22px;display:flex;flex-wrap:wrap;align-items:baseline;font-size:.75rem;line-height:1.5;color:#94a3b8}
+.credit p{margin:0}.credit .mark{color:#64748b;font-weight:650;letter-spacing:.03em}
+.credit p+p::before{content:"·";margin:0 10px;color:#cbd5e1}
+.credit a{color:#64748b;text-decoration:none;border-bottom:1px solid #e2e8f0}
+.credit a:hover{color:#4f46e5;border-bottom-color:#c7d2fe}
 @media(max-width:640px){header,nav,.container{padding-left:14px;padding-right:14px}td.date,th.date{display:none}}
 
 /* ── search box ── */
@@ -79,7 +84,7 @@ td.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}
 <body>
 
 <header>
-  <h1>lanserve</h1>
+  <h1>ServeIt</h1>
   <div id="search-wrap">
     <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
@@ -154,6 +159,10 @@ td.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}
     </table>
     <p id="search-empty" class="empty" style="display:none">No matching files or folders</p>
   </div>
+  <footer class="credit">
+    <p><span class="mark">ServeIt</span> shares one folder on the local network, or only the files you pick.</p>
+    <p>Made by <a href="https://github.com/Danakolana" target="_blank" rel="noreferrer">danakolana</a> · <a href="https://github.com/Danakolana/ServeIt" target="_blank" rel="noreferrer">GitHub</a></p>
+  </footer>
 </div>
 
 <script>
@@ -317,7 +326,7 @@ function startZipDownload(button, status, url, paths, done){
   status.className = 'status';
   status.textContent = 'Preparing…';
   var save = window.showSaveFilePicker
-    ? window.showSaveFilePicker({suggestedName:'lanserve.zip'}).catch(function(error){
+    ? window.showSaveFilePicker({suggestedName:'ServeIt.zip'}).catch(function(error){
         if(error && error.name === 'AbortError') return null;
         return undefined;
       })

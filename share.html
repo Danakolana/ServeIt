@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>lanserve shared files</title>
+<title>ServeIt shared files</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f5f7fa;color:#1e293b;min-height:100vh}
 header{background:#fff;border-bottom:1px solid #e2e8f0;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
@@ -22,12 +22,17 @@ th[aria-sort="ascending"] .sort::after{content:" \2191";color:#4f46e5}
 th[aria-sort="descending"] .sort::after{content:" \2193";color:#4f46e5}
 th.size .sort{display:block;width:100%;text-align:right}
 tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color:#1e293b;text-decoration:none}.name a:hover{color:#4f46e5}.size{text-align:right;color:#94a3b8;white-space:nowrap;font-variant-numeric:tabular-nums}.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}.empty{text-align:center;padding:55px;color:#94a3b8}
+.credit{margin-top:22px;display:flex;flex-wrap:wrap;align-items:baseline;font-size:.75rem;line-height:1.5;color:#94a3b8}
+.credit p{margin:0}.credit .mark{color:#64748b;font-weight:650;letter-spacing:.03em}
+.credit p+p::before{content:"·";margin:0 10px;color:#cbd5e1}
+.credit a{color:#64748b;text-decoration:none;border-bottom:1px solid #e2e8f0}
+.credit a:hover{color:#4f46e5;border-bottom-color:#c7d2fe}
 @media(max-width:640px){header,.wrap,nav{padding-left:14px;padding-right:14px}.date{display:none}th,td{padding:10px 8px}}
 </style>
 </head>
 <body>
 <header>
-  <h1>lanserve</h1>
+  <h1>ServeIt</h1>
   <div id="timer" class="timer" data-expiry="{{.ExpiresAt.Unix}}" data-hard-expiry="{{.HardExpiresAt.Unix}}" data-idle="{{.IdleTimeoutMinutes}}">Active</div>
 </header>
 <nav>
@@ -62,6 +67,10 @@ tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color
     </table>
     {{else}}<div class="empty">No available items in this share.</div>{{end}}
   </div>
+  <footer class="credit">
+    <p><span class="mark">ServeIt</span> shares one folder on the local network, or only the files you pick.</p>
+    <p>Made by <a href="https://github.com/Danakolana" target="_blank" rel="noreferrer">danakolana</a> · <a href="https://github.com/Danakolana/ServeIt" target="_blank" rel="noreferrer">GitHub</a></p>
+  </footer>
 </main>
 <script>
 var timer = document.getElementById('timer');
@@ -175,7 +184,7 @@ function startZipDownload(button, status, url, paths, done){
   status.className = 'status';
   status.textContent = 'Preparing…';
   var save = window.showSaveFilePicker
-    ? window.showSaveFilePicker({suggestedName:'lanserve.zip'}).catch(function(error){
+    ? window.showSaveFilePicker({suggestedName:'ServeIt.zip'}).catch(function(error){
         if(error && error.name === 'AbortError') return null;
         return undefined;
       })
