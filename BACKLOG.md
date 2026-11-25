@@ -5,6 +5,8 @@ Each item below is the full brief. Ship them as written, and keep the UI simple,
 
 ## 1. Terminal startup should look intentional
 
+**Status: done.**
+
 When the process starts, the terminal is the product’s front door. QR codes, URLs, credentials, and any other useful startup facts should read as one designed panel, not a debug dump.
 
 - Group related lines: what is being served (`--dir`), port, whether file-browser auth is on, admin URL, and the admin username.
@@ -16,6 +18,8 @@ When the process starts, the terminal is the product’s front door. QR codes, U
 
 ## 2. QR codes for the useful LAN address only
 
+**Status: done.**
+
 Today every up, non-loopback IPv4 interface gets its own file QR and admin QR. On a typical machine that includes a `192.168.x.x` LAN address and a `172.x.x.x` address from Docker, a VM, or another virtual NIC. The `172` code is the one people scan by mistake.
 
 - Prefer `192.168.0.0/16`. Print QR codes and the primary URL for those addresses only.
@@ -25,6 +29,8 @@ Today every up, non-loopback IPv4 interface gets its own file QR and admin QR. O
 - The owner observed two codes, one in the `192.168` range and one in `172`. After this change, a normal home LAN should show the `192.168` code only. (The spoken “198” range means `192.168`.)
 
 ## 3. Sortable columns on listings that deserve it
+
+**Status: done.**
 
 The file tables are the working surface: name, size, and modified time. If a listing is long enough to scan, those columns should sort.
 
@@ -37,6 +43,8 @@ The file tables are the working surface: name, size, and modified time. If a lis
 
 ## 4. Choose files, then download them together
 
+**Status: done.**
+
 The user-facing file browser (and the guest share page, which is the same job for a visitor) only downloads one click at a time. A person should be able to tick several files in the current list, press one download action, and leave the rest to the server.
 
 - Selection is for the current directory listing. State the count and the total size before the download starts.
@@ -48,6 +56,8 @@ The user-facing file browser (and the guest share page, which is the same job fo
 - Stay inside the current minimal layout: a checkbox column, a small action bar, and the existing type. No second visual system.
 
 ## 5. A small pass on the existing UI
+
+**Status: done.**
 
 The pages should stay simple, minimal, and polished. This is a refinement of the current browser, admin, and guest screens, not a redesign.
 

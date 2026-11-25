@@ -28,7 +28,7 @@ Or, if you already have a binary:
 ./lanserve --dir ~/Videos --port 8080 --password guest --admin-password owner
 ```
 
-On startup the terminal prints each LAN address, the admin URL, and a QR code for both. The super-admin password is printed when you do not set one.
+On startup, after the port is open, one panel lists the directory, port, file-browser auth, admin user, admin password, and how to stop (`Ctrl+C`). QR codes are printed for `192.168.x.x` addresses only. If another address was skipped, the panel says so in one line. With no `192.168` address, the panel falls back to `127.0.0.1`. The password is only in that panel.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -45,7 +45,7 @@ On startup the terminal prints each LAN address, the admin URL, and a QR code fo
 
 ## What you get
 
-**File browser.** Breadcrumbs, directory listing, and a click-to-download for any file under `--dir`.
+**File browser.** Breadcrumbs, a sortable listing, and click-to-download for any file under `--dir`. Select several rows and download them as one stored zip. A selected folder is packed with its contents, and the bar shows the count and size before the transfer starts.
 
 **Search.** Live search across files and subfolders, capped at 200 hits.
 

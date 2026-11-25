@@ -6,19 +6,28 @@
 <title>lanserve shared files</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f5f7fa;color:#1e293b;min-height:100vh}
-header{background:#fff;border-bottom:1px solid #e2e8f0;padding:15px 24px;display:flex;justify-content:space-between;align-items:center;gap:14px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-h1{font-size:1.05rem;margin:0;color:#4f46e5}.timer{font-size:.8rem;color:#64748b;background:#f1f5f9;padding:7px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
-nav{padding:10px 24px;font-size:.82rem;background:#fff;border-bottom:1px solid #e2e8f0}nav a{color:#4f46e5;text-decoration:none}nav span{margin:0 5px;color:#cbd5e1}
-.wrap{padding:22px 24px 60px;max-width:1100px;margin:auto}.notice{font-size:.83rem;color:#64748b;margin-bottom:12px}
-.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
-table{width:100%;border-collapse:collapse}th,td{padding:11px 14px;text-align:left;border-bottom:1px solid #f1f5f9;font-size:.88rem}th{background:#f8fafc;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
-tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color:#1e293b;text-decoration:none}.name a:hover{color:#4f46e5}.size{text-align:right;color:#94a3b8;white-space:nowrap}.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}.empty{text-align:center;padding:55px;color:#94a3b8}
-@media(max-width:600px){header,.wrap{padding-left:14px;padding-right:14px}.date{display:none}th,td{padding:10px 8px}}
+header{background:#fff;border-bottom:1px solid #e2e8f0;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+h1{font-size:1.05rem;margin:0;color:#4f46e5;font-weight:700}.timer{font-size:.8rem;color:#64748b;background:#f1f5f9;padding:7px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
+nav{padding:10px 20px;font-size:.82rem;background:#fff;border-bottom:1px solid #e2e8f0}nav a{color:#4f46e5;text-decoration:none}nav span{margin:0 5px;color:#cbd5e1}
+.wrap{padding:20px 20px 60px;max-width:1100px;margin:auto}.notice{font-size:.83rem;color:#64748b;margin-bottom:12px}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.04)}
+.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #e2e8f0}
+.bar .hint,.status{font-size:.78rem;color:#64748b}.status.error{color:#b91c1c}
+.bar button{border:0;border-radius:8px;padding:7px 12px;background:#4f46e5;color:#fff;font-weight:600;cursor:pointer;font:inherit}
+.bar button:disabled{opacity:.45;cursor:not-allowed}
+.pick-col{width:36px;text-align:center}
+table{width:100%;border-collapse:collapse}th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #f1f5f9;font-size:.88rem}th{background:#f8fafc;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+th .sort{background:none;border:0;padding:0;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;font-weight:inherit;cursor:pointer}
+th[aria-sort="ascending"] .sort::after{content:" \2191";color:#4f46e5}
+th[aria-sort="descending"] .sort::after{content:" \2193";color:#4f46e5}
+th.size .sort{display:block;width:100%;text-align:right}
+tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color:#1e293b;text-decoration:none}.name a:hover{color:#4f46e5}.size{text-align:right;color:#94a3b8;white-space:nowrap;font-variant-numeric:tabular-nums}.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}.empty{text-align:center;padding:55px;color:#94a3b8}
+@media(max-width:640px){header,.wrap,nav{padding-left:14px;padding-right:14px}.date{display:none}th,td{padding:10px 8px}}
 </style>
 </head>
 <body>
 <header>
-  <h1>📦 Shared files</h1>
+  <h1>lanserve</h1>
   <div id="timer" class="timer" data-expiry="{{.ExpiresAt.Unix}}" data-hard-expiry="{{.HardExpiresAt.Unix}}" data-idle="{{.IdleTimeoutMinutes}}">Active</div>
 </header>
 <nav>
@@ -31,11 +40,18 @@ tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color
   <p class="notice">This temporary link only provides access to the files and folders selected by the administrator. Activity extends its idle timer within the maximum lifetime.</p>
   <div class="card">
     {{if .Entries}}
-    <table>
-      <thead><tr><th></th><th>Name</th><th class="size">Size</th><th class="date">Modified</th></tr></thead>
+    <div class="bar" data-url="/s/{{.Token}}/download">
+      <span id="pick-summary">0 selected</span>
+      <span class="hint">A selected folder includes its contents.</span>
+      <button type="button" id="download-zip" disabled>Download</button>
+      <span id="download-status" class="status"></span>
+    </div>
+    <table class="listing">
+      <thead><tr><th class="pick-col"><input id="select-all" type="checkbox" aria-label="Select all"></th><th></th><th data-key="name" aria-sort="ascending"><button type="button" class="sort">Name</button></th><th class="size" data-key="size"><button type="button" class="sort">Size</button></th><th class="date" data-key="mtime"><button type="button" class="sort">Modified</button></th></tr></thead>
       <tbody>
       {{range .Entries}}
-      <tr>
+      <tr data-name="{{.Name}}" data-dir="{{if .IsDir}}1{{else}}0{{end}}" data-size="{{if .IsDir}}0{{else}}{{.Size}}{{end}}" data-mtime="{{.ModTime.Unix}}">
+        <td class="pick-col"><input class="pick" type="checkbox" value="{{.RelPath}}" aria-label="Select {{.Name}}"></td>
         <td>{{if .IsDir}}📁{{else}}📄{{end}}</td>
         <td class="name"><a href="/s/{{$.Token}}/?path={{urlquery .RelPath}}"{{if not .IsDir}} download data-download="true"{{end}}>{{.Name}}</a></td>
         <td class="size">{{if .IsDir}}—{{else}}{{humanSize .Size}}{{end}}</td>
@@ -67,6 +83,137 @@ document.querySelectorAll('[data-download="true"]').forEach(function(link){
     updateTimer();
   });
 });
+bindListing(document.querySelector('.listing'));
+function humanSize(n){
+  if(n < 1024) return n + ' B';
+  var units = ['KB','MB','GB','TB'], i = -1;
+  do { n /= 1024; i++; } while(n >= 1024 && i < units.length - 1);
+  return n.toFixed(1) + ' ' + units[i];
+}
+function bindListing(table){
+  if(!table) return;
+  var endpoint = document.querySelector('.bar').dataset.url;
+  var headers = Array.from(table.querySelectorAll('th[data-key]'));
+  var state = {key:'name', dir:1};
+  function apply(){
+    var rows = Array.from(table.tBodies[0].rows);
+    rows.sort(function(a,b){
+      if(state.key === 'name'){
+        var ad = a.dataset.dir === '1', bd = b.dataset.dir === '1';
+        if(ad !== bd) return ad ? -1 : 1;
+        return a.dataset.name.localeCompare(b.dataset.name, undefined, {sensitivity:'base'}) * state.dir;
+      }
+      var av = Number(a.dataset[state.key]), bv = Number(b.dataset[state.key]);
+      if(av !== bv) return (av - bv) * state.dir;
+      return a.dataset.name.localeCompare(b.dataset.name, undefined, {sensitivity:'base'});
+    });
+    rows.forEach(function(row){ table.tBodies[0].appendChild(row); });
+    headers.forEach(function(header){ header.removeAttribute('aria-sort'); });
+    var active = headers.find(function(header){ return header.dataset.key === state.key; });
+    if(active) active.setAttribute('aria-sort', state.dir === 1 ? 'ascending' : 'descending');
+  }
+  headers.forEach(function(header){
+    header.querySelector('.sort').addEventListener('click', function(){
+      var key = header.dataset.key;
+      if(state.key === key) state.dir *= -1; else { state.key = key; state.dir = 1; }
+      apply();
+    });
+  });
+  var picks = Array.from(table.querySelectorAll('.pick'));
+  var summary = document.getElementById('pick-summary');
+  var button = document.getElementById('download-zip');
+  var status = document.getElementById('download-status');
+  var selectAll = document.getElementById('select-all');
+  var planToken = 0;
+  function selected(){ return picks.filter(function(item){ return item.checked; }); }
+  function updatePick(){
+    var rows = selected();
+    var bytes = 0, hasDir = false;
+    rows.forEach(function(item){
+      var row = item.closest('tr');
+      if(row.dataset.dir === '1') hasDir = true; else bytes += Number(row.dataset.size);
+    });
+    button.disabled = rows.length === 0;
+    if(!rows.length){ summary.textContent = '0 selected'; status.textContent = ''; return; }
+    if(!hasDir){ summary.textContent = rows.length + ' selected · ' + humanSize(bytes); return; }
+    summary.textContent = rows.length + ' selected · counting…';
+    button.disabled = true;
+    var token = ++planToken;
+    var paths = rows.map(function(item){ return item.value; });
+    fetch(endpoint + '?plan=1', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths:paths})})
+      .then(function(resp){ return resp.json().then(function(body){ return {ok:resp.ok, body:body}; }); })
+      .then(function(result){
+        if(token !== planToken) return;
+        if(!result.ok) throw new Error(result.body.error || 'Could not measure the selection');
+        summary.textContent = rows.length + ' selected · ' + result.body.files + ' files · ' + humanSize(result.body.bytes);
+        button.disabled = false;
+      }).catch(function(error){
+        if(token !== planToken) return;
+        status.className = 'status error';
+        status.textContent = error.message;
+      });
+  }
+  picks.forEach(function(item){ item.addEventListener('change', function(){
+    status.className = 'status';
+    status.textContent = '';
+    if(selectAll) selectAll.checked = picks.every(function(pick){ return pick.checked; });
+    updatePick();
+  }); });
+  if(selectAll) selectAll.addEventListener('change', function(){
+    picks.forEach(function(item){ item.checked = selectAll.checked; });
+    updatePick();
+  });
+  button.addEventListener('click', function(){
+    expiry = Math.min(Date.now() + idleMinutes*60000, hardExpiry);
+    updateTimer();
+    startZipDownload(button, status, endpoint, selected().map(function(item){ return item.value; }), updatePick);
+  });
+}
+function startZipDownload(button, status, url, paths, done){
+  if(!paths.length) return;
+  button.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Preparing…';
+  var save = window.showSaveFilePicker
+    ? window.showSaveFilePicker({suggestedName:'lanserve.zip'}).catch(function(error){
+        if(error && error.name === 'AbortError') return null;
+        return undefined;
+      })
+    : Promise.resolve(undefined);
+  save.then(function(handle){
+    if(handle === null){ status.textContent = ''; done(); return; }
+    if(handle){
+      return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths:paths})})
+        .then(function(resp){
+          if(!resp.ok) return resp.json().then(function(body){ throw new Error(body.error || 'Download failed'); });
+          status.textContent = 'Downloading…';
+          return handle.createWritable().then(function(writable){
+            return resp.body.pipeTo(writable).then(function(){ status.textContent = 'Download complete.'; }, function(){ throw new Error('Download failed. A selected file could not be read.'); });
+          });
+        });
+    }
+    return fetch(url + '?plan=1', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths:paths})})
+      .then(function(resp){ return resp.json().then(function(body){ if(!resp.ok) throw new Error(body.error || 'Download failed'); }); })
+      .then(function(){
+        status.textContent = 'Downloading…';
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        paths.forEach(function(path){
+          var input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = 'path';
+          input.value = path;
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+      });
+  }).catch(function(error){
+    status.className = 'status error';
+    status.textContent = error.message || 'Download failed';
+  }).then(function(){ done(); });
+}
 </script>
 </body>
 </html>

@@ -15,7 +15,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+	"unsafe"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -23,11 +25,12 @@ import (
 const shareStateFilename = ".lanserve-shares.json"
 
 var (
-	adminPassword string
-	adminTmpl     *template.Template
-	shareTmpl     *template.Template
-	shareStore    *ShareStore
-	resolvedRoot  string
+	adminPassword          string
+	adminPasswordGenerated bool
+	adminTmpl              *template.Template
+	shareTmpl              *template.Template
+	shareStore             *ShareStore
+	resolvedRoot           string
 )
 
 type AdminPageData struct {
@@ -112,6 +115,7 @@ func initSharing(configuredPassword string) error {
 		if err != nil {
 			return err
 		}
+		adminPasswordGenerated = true
 	}
 	shareStore, err = loadShareStore(filepath.Join(root, shareStateFilename))
 	return err
@@ -251,12 +255,17 @@ func shareItemHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func shareHandler(w http.ResponseWriter, r *http.Request) {
+	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/s/"), "/")
+	token, extra, found := strings.Cut(rest, "/")
+	if found && extra == "download" {
+		shareDownloadHandler(w, r, token)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	token := strings.Trim(strings.TrimPrefix(r.URL.Path, "/s/"), "/")
-	if token == "" || strings.Contains(token, "/") {
+	if token == "" || found {
 		http.NotFound(w, r)
 		return
 	}
@@ -629,7 +638,7 @@ func requestBaseURL(r *http.Request) string {
 	host := r.Host
 	hostname, port, err := net.SplitHostPort(host)
 	if err == nil && (hostname == "localhost" || (net.ParseIP(hostname) != nil && net.ParseIP(hostname).IsLoopback())) {
-		if discovered := discoverLANURLs(port); len(discovered) > 0 {
+		if discovered, _ := discoverLANURLs(port); len(discovered) > 0 {
 			return discovered[0]
 		}
 	}
@@ -667,27 +676,216 @@ func randomSecret(length int) (string, error) {
 }
 
 func printStartup(port string) {
-	fmt.Println("\n━━━ lanserve ready ━━━")
-	for _, base := range discoverLANURLs(port) {
-		fmt.Printf("\nFiles: %s\nAdmin: %s/admin\n", base, base)
-		printTerminalQR("Files QR", base)
-		printTerminalQR("Admin QR", base+"/admin")
+	width := terminalWidth()
+	if width > 20 {
+		width--
 	}
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Print(renderStartup(port, width))
 }
 
-func printTerminalQR(label, address string) {
+func renderStartup(port string, width int) string {
+	if width < 40 {
+		width = 40
+	}
+	browser := "open on the LAN"
+	if password != "" {
+		browser = "password required, user admin"
+	}
+	secret := adminPassword
+	if adminPasswordGenerated {
+		secret += "  (generated for this run)"
+	}
+	facts := [][2]string{
+		{"Directory", root},
+		{"Port", port},
+		{"File browser", browser},
+		{"Admin user", "admin"},
+		{"Admin password", secret},
+		{"Stop", "Ctrl+C"},
+	}
+	urls, skipped := discoverLANURLs(port)
+	if skipped > 0 {
+		note := "Skipped 1 other address"
+		if skipped != 1 {
+			note = fmt.Sprintf("Skipped %d other addresses", skipped)
+		}
+		facts = append(facts, [2]string{"Note", note})
+	}
+	var out strings.Builder
+	out.WriteString("\n")
+	out.WriteString(startupBox("lanserve", facts, width))
+	out.WriteString("\n")
+	for _, base := range urls {
+		out.WriteString(renderAddressBlock(base, width))
+		out.WriteString("\n")
+	}
+	return out.String()
+}
+
+func startupBox(title string, rows [][2]string, width int) string {
+	inner := width - 4
+	if inner < 24 {
+		inner = 24
+	}
+	labelWidth := 16
+	var body []string
+	body = append(body, padRight(title, inner))
+	body = append(body, strings.Repeat("-", inner))
+	for _, row := range rows {
+		valueWidth := inner - labelWidth - 1
+		if valueWidth < 8 {
+			valueWidth = 8
+		}
+		lines := wrapText(row[1], valueWidth)
+		if len(lines) == 0 {
+			lines = []string{""}
+		}
+		for i, line := range lines {
+			label := ""
+			if i == 0 {
+				label = row[0]
+			}
+			body = append(body, padRight(padRight(label, labelWidth)+" "+line, inner))
+		}
+	}
+	var out strings.Builder
+	rule := "+" + strings.Repeat("-", inner+2) + "+\n"
+	out.WriteString(rule)
+	for _, line := range body {
+		out.WriteString("| " + padRight(line, inner) + " |\n")
+	}
+	out.WriteString(rule)
+	return out.String()
+}
+
+func renderAddressBlock(base string, width int) string {
+	files := qrColumn("Files", base)
+	admin := qrColumn("Admin", base+"/admin")
+	gap := 4
+	pairedWidth := columnWidth(files) + gap + columnWidth(admin)
+	var lines []string
+	if pairedWidth <= width {
+		lines = joinColumns(files, admin, gap)
+	} else {
+		lines = append(lines, files...)
+		lines = append(lines, "")
+		lines = append(lines, admin...)
+	}
+	host := strings.TrimPrefix(base, "http://")
+	var out strings.Builder
+	out.WriteString(host)
+	out.WriteString("\n\n")
+	for _, line := range lines {
+		out.WriteString(line)
+		out.WriteByte('\n')
+	}
+	return out.String()
+}
+
+func qrColumn(title, address string) []string {
+	lines := []string{title, address, ""}
 	code, err := qrcode.New(address, qrcode.Medium)
 	if err != nil {
-		return
+		lines = append(lines, "(QR code unavailable)")
+		return lines
 	}
-	fmt.Printf("%s:\n", label)
-	fmt.Print(code.ToSmallString(false))
+	raw := strings.TrimRight(code.ToSmallString(false), "\n")
+	if raw == "" {
+		lines = append(lines, "(QR code unavailable)")
+		return lines
+	}
+	return append(lines, strings.Split(raw, "\n")...)
 }
 
-func discoverLANURLs(port string) []string {
-	seen := make(map[string]bool)
-	var result []string
+func joinColumns(left, right []string, gap int) []string {
+	width := columnWidth(left)
+	rows := len(left)
+	if len(right) > rows {
+		rows = len(right)
+	}
+	spacer := strings.Repeat(" ", gap)
+	out := make([]string, rows)
+	for i := 0; i < rows; i++ {
+		l, r := "", ""
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		out[i] = padRight(l, width) + spacer + r
+	}
+	return out
+}
+
+func columnWidth(lines []string) int {
+	width := 0
+	for _, line := range lines {
+		if n := runeLen(line); n > width {
+			width = n
+		}
+	}
+	return width
+}
+
+func wrapText(value string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	var lines []string
+	rest := value
+	for rest != "" {
+		if runeLen(rest) <= width {
+			lines = append(lines, rest)
+			break
+		}
+		cut := width
+		if cut > len(rest) {
+			cut = len(rest)
+		}
+		chunk := string([]rune(rest)[:cut])
+		rest = string([]rune(rest)[cut:])
+		lines = append(lines, chunk)
+	}
+	return lines
+}
+
+func padRight(value string, width int) string {
+	if extra := width - runeLen(value); extra > 0 {
+		return value + strings.Repeat(" ", extra)
+	}
+	return value
+}
+
+func runeLen(value string) int {
+	n := 0
+	for _, r := range value {
+		_ = r
+		n++
+	}
+	return n
+}
+
+func terminalWidth() int {
+	info, err := os.Stdout.Stat()
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return 80
+	}
+	var size struct {
+		Row    uint16
+		Col    uint16
+		Xpixel uint16
+		Ypixel uint16
+	}
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, os.Stdout.Fd(), uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&size)))
+	if errno != 0 || size.Col < 40 {
+		return 80
+	}
+	return int(size.Col)
+}
+
+func discoverLANURLs(port string) ([]string, int) {
+	var ips []net.IP
 	interfaces, err := net.Interfaces()
 	if err == nil {
 		for _, networkInterface := range interfaces {
@@ -696,26 +894,43 @@ func discoverLANURLs(port string) []string {
 			}
 			addresses, _ := networkInterface.Addrs()
 			for _, address := range addresses {
-				var ip net.IP
 				switch value := address.(type) {
 				case *net.IPNet:
-					ip = value.IP
+					ips = append(ips, value.IP)
 				case *net.IPAddr:
-					ip = value.IP
-				}
-				if ip == nil || ip.IsLoopback() || ip.To4() == nil {
-					continue
-				}
-				base := fmt.Sprintf("http://%s:%s", ip.String(), port)
-				if !seen[base] {
-					seen[base] = true
-					result = append(result, base)
+					ips = append(ips, value.IP)
 				}
 			}
 		}
 	}
-	if len(result) == 0 {
-		result = append(result, "http://127.0.0.1:"+port)
+	return chooseLANURLs(port, ips)
+}
+
+func chooseLANURLs(port string, ips []net.IP) ([]string, int) {
+	seen := make(map[string]bool)
+	var urls []string
+	skipped := 0
+	for _, ip := range ips {
+		ip4 := ip.To4()
+		if ip4 == nil || ip.IsLoopback() {
+			continue
+		}
+		if ip4[0] != 192 || ip4[1] != 168 {
+			if !seen["skip:"+ip4.String()] {
+				seen["skip:"+ip4.String()] = true
+				skipped++
+			}
+			continue
+		}
+		base := fmt.Sprintf("http://%s:%s", ip4.String(), port)
+		if !seen[base] {
+			seen[base] = true
+			urls = append(urls, base)
+		}
 	}
-	return result
+	sort.Strings(urls)
+	if len(urls) == 0 {
+		return []string{"http://127.0.0.1:" + port}, skipped
+	}
+	return urls, skipped
 }

@@ -18,6 +18,16 @@ header{
 }
 header h1{font-size:1.05rem;font-weight:700;color:#4f46e5;white-space:nowrap;letter-spacing:-.3px}
 .admin-link{font-size:.82rem;color:#4338ca;text-decoration:none;background:#eef2ff;padding:7px 10px;border-radius:8px;font-weight:600}
+.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #e2e8f0}
+.bar .hint,.status{font-size:.78rem;color:#64748b}.status.error{color:#b91c1c}
+.bar button,.sort{font:inherit}.bar button{border:0;border-radius:8px;padding:7px 12px;background:#4f46e5;color:#fff;font-weight:600;cursor:pointer}
+.bar button:disabled{opacity:.45;cursor:not-allowed}
+.pick-col{width:36px;text-align:center}
+th .sort{background:none;border:0;padding:0;color:inherit;letter-spacing:inherit;text-transform:inherit;font-weight:inherit;cursor:pointer}
+th[aria-sort="ascending"] .sort::after{content:" \2191";color:#4f46e5}
+th[aria-sort="descending"] .sort::after{content:" \2193";color:#4f46e5}
+th.size .sort{display:block;width:100%;text-align:right}
+@media(max-width:640px){header,nav,.container{padding-left:14px;padding-right:14px}td.date,th.date{display:none}}
 
 /* ── search box ── */
 #search-wrap{flex:1;min-width:220px;position:relative}
@@ -69,7 +79,7 @@ td.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}
 <body>
 
 <header>
-  <h1>📡 lanserve</h1>
+  <h1>lanserve</h1>
   <div id="search-wrap">
     <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
@@ -92,16 +102,24 @@ td.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}
   <!-- directory listing -->
   <div id="dir-listing" class="card">
     {{if .Entries}}
-    <table>
+    <div class="bar" data-url="/api/download">
+      <span id="pick-summary">0 selected</span>
+      <span class="hint">A selected folder includes its contents.</span>
+      <button type="button" id="download-zip" disabled>Download</button>
+      <span id="download-status" class="status"></span>
+    </div>
+    <table class="listing">
       <thead><tr>
+        <th class="pick-col"><input id="select-all" type="checkbox" aria-label="Select all"></th>
         <th class="icon"></th>
-        <th>Name</th>
-        <th style="text-align:right">Size</th>
-        <th>Modified</th>
+        <th data-key="name" aria-sort="ascending"><button type="button" class="sort">Name</button></th>
+        <th class="size" data-key="size"><button type="button" class="sort">Size</button></th>
+        <th class="date" data-key="mtime"><button type="button" class="sort">Modified</button></th>
       </tr></thead>
       <tbody>
       {{range .Entries}}
-      <tr>
+      <tr data-name="{{.Name}}" data-dir="{{if .IsDir}}1{{else}}0{{end}}" data-size="{{if .IsDir}}0{{else}}{{.Size}}{{end}}" data-mtime="{{.ModTime.Unix}}">
+        <td class="pick-col"><input class="pick" type="checkbox" value="{{.RelPath}}" aria-label="Select {{.Name}}"></td>
         <td class="icon">
           {{if .IsDir}}<span class="icon-dir">📁</span>
           {{else}}<span class="icon-file">📄</span>{{end}}
@@ -130,7 +148,7 @@ td.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}
       <thead><tr>
         <th class="icon"></th>
         <th>Path</th>
-        <th style="text-align:right">Size</th>
+        <th class="size">Size</th>
       </tr></thead>
       <tbody id="search-tbody"></tbody>
     </table>
@@ -213,6 +231,130 @@ async function doSearch(q) {
 
 function escHtml(s){
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+bindListing(document.querySelector('#dir-listing .listing'));
+
+function bindListing(table){
+  if(!table) return;
+  var headers = Array.from(table.querySelectorAll('th[data-key]'));
+  var state = {key:'name', dir:1};
+  function apply(){
+    var rows = Array.from(table.tBodies[0].rows);
+    rows.sort(function(a,b){
+      if(state.key === 'name'){
+        var ad = a.dataset.dir === '1', bd = b.dataset.dir === '1';
+        if(ad !== bd) return ad ? -1 : 1;
+        return a.dataset.name.localeCompare(b.dataset.name, undefined, {sensitivity:'base'}) * state.dir;
+      }
+      var av = Number(a.dataset[state.key]), bv = Number(b.dataset[state.key]);
+      if(av !== bv) return (av - bv) * state.dir;
+      return a.dataset.name.localeCompare(b.dataset.name, undefined, {sensitivity:'base'});
+    });
+    rows.forEach(function(row){ table.tBodies[0].appendChild(row); });
+    headers.forEach(function(header){ header.removeAttribute('aria-sort'); });
+    var active = headers.find(function(header){ return header.dataset.key === state.key; });
+    if(active) active.setAttribute('aria-sort', state.dir === 1 ? 'ascending' : 'descending');
+  }
+  headers.forEach(function(header){
+    header.querySelector('.sort').addEventListener('click', function(){
+      var key = header.dataset.key;
+      if(state.key === key) state.dir *= -1; else { state.key = key; state.dir = 1; }
+      apply();
+    });
+  });
+  var picks = Array.from(table.querySelectorAll('.pick'));
+  var summary = document.getElementById('pick-summary');
+  var button = document.getElementById('download-zip');
+  var status = document.getElementById('download-status');
+  var selectAll = document.getElementById('select-all');
+  var planToken = 0;
+  function selected(){ return picks.filter(function(item){ return item.checked; }); }
+  function updatePick(){
+    var rows = selected();
+    var bytes = 0, hasDir = false;
+    rows.forEach(function(item){
+      var row = item.closest('tr');
+      if(row.dataset.dir === '1') hasDir = true; else bytes += Number(row.dataset.size);
+    });
+    button.disabled = rows.length === 0;
+    if(!rows.length){ summary.textContent = '0 selected'; status.textContent = ''; return; }
+    if(!hasDir){ summary.textContent = rows.length + ' selected · ' + humanSize(bytes); return; }
+    summary.textContent = rows.length + ' selected · counting…';
+    button.disabled = true;
+    var token = ++planToken;
+    var paths = rows.map(function(item){ return item.value; });
+    fetch('/api/download?plan=1', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths:paths})
+    }).then(function(resp){ return resp.json().then(function(body){ return {ok:resp.ok, body:body}; }); })
+      .then(function(result){
+        if(token !== planToken) return;
+        if(!result.ok) throw new Error(result.body.error || 'Could not measure the selection');
+        summary.textContent = rows.length + ' selected · ' + result.body.files + ' files · ' + humanSize(result.body.bytes);
+        button.disabled = false;
+      }).catch(function(error){
+        if(token !== planToken) return;
+        status.className = 'status error';
+        status.textContent = error.message;
+      });
+  }
+  picks.forEach(function(item){ item.addEventListener('change', function(){
+    status.className = 'status';
+    status.textContent = '';
+    if(selectAll) selectAll.checked = picks.every(function(pick){ return pick.checked; });
+    updatePick();
+  }); });
+  if(selectAll) selectAll.addEventListener('change', function(){
+    picks.forEach(function(item){ item.checked = selectAll.checked; });
+    updatePick();
+  });
+  button.addEventListener('click', function(){ startZipDownload(button, status, '/api/download', selected().map(function(item){ return item.value; }), updatePick); });
+}
+
+function startZipDownload(button, status, url, paths, done){
+  if(!paths.length) return;
+  button.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Preparing…';
+  var save = window.showSaveFilePicker
+    ? window.showSaveFilePicker({suggestedName:'lanserve.zip'}).catch(function(error){
+        if(error && error.name === 'AbortError') return null;
+        return undefined;
+      })
+    : Promise.resolve(undefined);
+  save.then(function(handle){
+    if(handle === null){ status.textContent = ''; done(); return; }
+    if(handle){
+      return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths:paths})})
+        .then(function(resp){
+          if(!resp.ok) return resp.json().then(function(body){ throw new Error(body.error || 'Download failed'); });
+          status.textContent = 'Downloading…';
+          return handle.createWritable().then(function(writable){
+            return resp.body.pipeTo(writable).then(function(){ status.textContent = 'Download complete.'; }, function(){ throw new Error('Download failed. A selected file could not be read.'); });
+          });
+        });
+    }
+    return fetch(url + '?plan=1', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths:paths})})
+      .then(function(resp){ return resp.json().then(function(body){ if(!resp.ok) throw new Error(body.error || 'Download failed'); }); })
+      .then(function(){
+        status.textContent = 'Downloading…';
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        paths.forEach(function(path){
+          var input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = 'path';
+          input.value = path;
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+      });
+  }).catch(function(error){
+    status.className = 'status error';
+    status.textContent = error.message || 'Download failed';
+  }).then(function(){ done(); });
 }
 </script>
 </body>

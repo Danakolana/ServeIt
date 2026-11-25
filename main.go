@@ -99,14 +99,18 @@ func main() {
 	mux.HandleFunc("/admin/", withAdminAuth(adminHandler))
 	mux.HandleFunc("/api/admin/shares", withAdminAuth(sharesCollectionHandler))
 	mux.HandleFunc("/api/admin/shares/", withAdminAuth(shareItemHandler))
+	mux.HandleFunc("/api/download", withAuth(downloadHandler))
 	mux.HandleFunc("/search", withAuth(searchHandler))
 	mux.HandleFunc("/", withAuth(browseHandler))
 
-	addr := "0.0.0.0:" + *port
+	listener, err := net.Listen("tcp", "0.0.0.0:"+*port)
+	if err != nil {
+		log.Fatalf("cannot listen on port %s: %v", *port, err)
+	}
 	printStartup(*port)
-	fmt.Printf("Super admin credentials: admin / %s\n", adminPassword)
-	log.Printf("Serving %s on %s  (auth: %v)\n", root, addr, password != "")
-	log.Fatal(http.ListenAndServe(addr, securityHeaders(mux)))
+	if err := http.Serve(listener, securityHeaders(mux)); err != nil {
+		log.Fatal(err)
+	}
 }
 
 // ─── middleware ───────────────────────────────────────────────────────────────
@@ -282,32 +286,4 @@ func humanSize(n int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
-}
-
-func legacyPrintLANAddresses(port string) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return
-	}
-	fmt.Println("\n━━━ lanserve ready ━━━")
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, _ := iface.Addrs()
-		for _, a := range addrs {
-			var ip net.IP
-			switch v := a.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			if ip == nil || ip.IsLoopback() || ip.To4() == nil {
-				continue
-			}
-			fmt.Printf("  http://%s:%s\n", ip, port)
-		}
-	}
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━\n")
 }
