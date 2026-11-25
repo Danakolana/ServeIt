@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>lanserve super admin</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f4f6fb;color:#172033}button,input{font:inherit}
+header{background:#111827;color:#fff;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+header h1{font-size:1.15rem;margin:0}.links{display:flex;gap:12px}.links a{color:#c7d2fe;text-decoration:none;font-size:.9rem}
+.wrap{max-width:1240px;margin:auto;padding:22px}.stats{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:12px;margin-bottom:18px}
+.stat,.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.04)}
+.stat{padding:16px}.stat b{display:block;font-size:1.65rem;color:#4f46e5}.stat span{font-size:.78rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em}
+.grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(330px,.65fr);gap:18px}.card{overflow:hidden}.card-head{padding:14px 16px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.card-head h2{font-size:1rem;margin:0}.crumbs{padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:.82rem}.crumbs a{color:#4f46e5;text-decoration:none}.crumbs span{color:#cbd5e1;margin:0 5px}
+table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #eef2f7;font-size:.86rem}th{background:#f8fafc;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+td.num{text-align:right;color:#64748b;font-variant-numeric:tabular-nums}.select-col{width:38px;text-align:center}.file-link{color:#172033;text-decoration:none}.file-link:hover{color:#4f46e5}.empty{padding:42px;text-align:center;color:#94a3b8}
+.settings{padding:16px;display:grid;gap:13px}.field label{display:block;font-size:.78rem;color:#64748b;margin-bottom:5px}.field input{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:9px 10px}
+.hint{font-size:.78rem;color:#64748b;line-height:1.5}.primary,.secondary,.danger{border:0;border-radius:8px;padding:9px 13px;cursor:pointer;font-weight:600}.primary{background:#4f46e5;color:#fff}.primary:disabled{opacity:.45;cursor:not-allowed}.secondary{background:#eef2ff;color:#4338ca}.danger{background:#fee2e2;color:#b91c1c}
+#message{font-size:.83rem;min-height:1.2em}.error{color:#b91c1c}.success{color:#047857}.shares{margin-top:18px}.share-list{display:grid;gap:12px;padding:14px}
+.share{border:1px solid #e2e8f0;border-radius:10px;padding:13px;display:grid;grid-template-columns:1fr auto;gap:10px}.share-url{font-size:.78rem;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:680px}
+.share-meta{display:flex;gap:12px;flex-wrap:wrap;font-size:.77rem;color:#64748b;margin-top:7px}.share-items{font-size:.78rem;color:#334155;margin-top:7px}.actions{display:flex;gap:7px;align-items:start}
+.badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:.7rem;font-weight:700;text-transform:uppercase}.active{background:#dcfce7;color:#166534}.expired{background:#f1f5f9;color:#475569}.revoked{background:#fee2e2;color:#991b1b}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.65);display:none;align-items:center;justify-content:center;padding:20px}.modal.open{display:flex}.modal-box{background:#fff;border-radius:14px;padding:20px;width:min(440px,100%);text-align:center}.modal img{width:256px;max-width:100%}.modal-url{font-size:.78rem;overflow-wrap:anywhere;color:#475569;margin:10px 0}
+@media(max-width:850px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.wrap{padding:14px}.share{grid-template-columns:1fr}.date-col{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡️ lanserve super admin</h1>
+  <div class="links"><a href="/">Main file browser</a><a href="/admin">Share dashboard</a></div>
+</header>
+<main class="wrap">
+  <section class="stats">
+    <div class="stat"><b id="total-count">0</b><span>Total links</span></div>
+    <div class="stat"><b id="active-count">0</b><span>Active links</span></div>
+    <div class="stat"><b id="view-count">0</b><span>Page views</span></div>
+    <div class="stat"><b id="download-count">0</b><span>Downloads</span></div>
+  </section>
+  <section class="grid">
+    <div class="card">
+      <div class="card-head"><h2>Select files and folders</h2><span id="selection-count">0 selected</span></div>
+      <div class="crumbs">
+        {{range $i,$c := .Parents}}{{if $i}}<span>/</span>{{end}}<a href="/admin?path={{urlquery $c.Path}}">{{$c.Name}}</a>{{end}}
+      </div>
+      {{if .Entries}}
+      <table>
+        <thead><tr><th class="select-col"><input id="select-all" type="checkbox" aria-label="Select all"></th><th>Name</th><th class="num">Size</th><th class="date-col">Modified</th></tr></thead>
+        <tbody>
+        {{range .Entries}}
+          <tr>
+            <td class="select-col"><input class="item-check" type="checkbox" value="{{.RelPath}}" aria-label="Select {{.Name}}"></td>
+            <td>{{if .IsDir}}📁 <a class="file-link" href="/admin?path={{urlquery .RelPath}}">{{.Name}}</a>{{else}}📄 {{.Name}}{{end}}</td>
+            <td class="num">{{if .IsDir}}—{{else}}{{humanSize .Size}}{{end}}</td>
+            <td class="date-col">{{formatTime .ModTime}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+      {{else}}<div class="empty">This directory is empty.</div>{{end}}
+    </div>
+    <aside class="card">
+      <div class="card-head"><h2>Create temporary link</h2></div>
+      <div class="settings">
+        <div class="field"><label for="idle">Idle timeout (minutes)</label><input id="idle" type="number" min="1" max="1440" value="15"></div>
+        <div class="field"><label for="maximum">Maximum lifetime (minutes)</label><input id="maximum" type="number" min="1" max="1440" value="1440"></div>
+        <p class="hint">Each guest page view or download restarts the idle timer. The link still expires at the maximum lifetime, which cannot exceed 24 hours.</p>
+        <button id="create-share" class="primary" disabled>Create share link</button>
+        <div id="message"></div>
+      </div>
+    </aside>
+  </section>
+  <section class="card shares">
+    <div class="card-head"><h2>Share links</h2><button id="refresh" class="secondary">Refresh</button></div>
+    <div id="share-list" class="share-list"><div class="empty">Loading links…</div></div>
+  </section>
+</main>
+<div id="qr-modal" class="modal" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <h2>Share link QR code</h2>
+    <img id="qr-image" alt="Share link QR code">
+    <div id="modal-url" class="modal-url"></div>
+    <button id="copy-modal" class="primary">Copy link</button>
+    <button id="close-modal" class="secondary">Close</button>
+  </div>
+</div>
+<script>
+var shares = [];
+var checks = Array.from(document.querySelectorAll('.item-check'));
+var savedSelection = [];
+try { savedSelection = JSON.parse(sessionStorage.getItem('lanserve-share-selection') || '[]'); } catch (_) {}
+var selectedPaths = new Set(savedSelection);
+checks.forEach(function(item){ item.checked = selectedPaths.has(item.value); });
+var createButton = document.getElementById('create-share');
+var message = document.getElementById('message');
+var modalURL = '';
+
+function escapeHTML(value) {
+  return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function updateSelection() {
+	checks.forEach(function(item){
+	  if (item.checked) selectedPaths.add(item.value); else selectedPaths.delete(item.value);
+	});
+	sessionStorage.setItem('lanserve-share-selection', JSON.stringify(Array.from(selectedPaths)));
+	var count = selectedPaths.size;
+  document.getElementById('selection-count').textContent = count + ' selected';
+  createButton.disabled = count === 0;
+}
+checks.forEach(function(item){ item.addEventListener('change', updateSelection); });
+var selectAll = document.getElementById('select-all');
+if (selectAll) selectAll.addEventListener('change', function(){
+  checks.forEach(function(item){ item.checked = selectAll.checked; });
+  updateSelection();
+});
+
+createButton.addEventListener('click', async function(){
+	var items = Array.from(selectedPaths);
+  var idle = Number(document.getElementById('idle').value);
+  var maximum = Number(document.getElementById('maximum').value);
+  message.className = '';
+  message.textContent = 'Creating link…';
+  createButton.disabled = true;
+  try {
+    var response = await fetch('/api/admin/shares', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({items:items,idleTimeoutMinutes:idle,maxLifetimeMinutes:maximum})
+    });
+    var result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not create link');
+    message.className = 'success';
+    message.textContent = 'Share link created.';
+	selectedPaths.clear();
+	sessionStorage.removeItem('lanserve-share-selection');
+	checks.forEach(function(item){ item.checked = false; });
+    if (selectAll) selectAll.checked = false;
+    updateSelection();
+    openQR(result);
+    await loadShares();
+  } catch (error) {
+    message.className = 'error';
+    message.textContent = error.message;
+    updateSelection();
+  }
+});
+
+function remaining(item) {
+  if (item.Status !== 'active') return item.Status;
+  var seconds = Math.max(0, Math.min(new Date(item.ExpiresAt)-Date.now(), new Date(item.HardExpiresAt)-Date.now())/1000);
+  if (seconds < 60) return Math.floor(seconds) + 's';
+  if (seconds < 3600) return Math.floor(seconds/60) + 'm ' + Math.floor(seconds%60) + 's';
+  return Math.floor(seconds/3600) + 'h ' + Math.floor((seconds%3600)/60) + 'm';
+}
+function renderShares() {
+  document.getElementById('total-count').textContent = shares.length;
+  document.getElementById('active-count').textContent = shares.filter(function(item){ return item.Status === 'active'; }).length;
+  document.getElementById('view-count').textContent = shares.reduce(function(sum,item){ return sum + item.PageViews; },0);
+  document.getElementById('download-count').textContent = shares.reduce(function(sum,item){ return sum + item.Downloads; },0);
+  var list = document.getElementById('share-list');
+  if (!shares.length) { list.innerHTML = '<div class="empty">No share links yet.</div>'; return; }
+  list.innerHTML = shares.map(function(item){
+    var names = item.Items.map(function(file){ return escapeHTML(file.Path); }).join(', ');
+    var revoke = item.Status === 'active' ? '<button class="danger revoke" data-id="' + escapeHTML(item.ID) + '">Revoke</button>' : '';
+    return '<article class="share">' +
+      '<div><span class="badge ' + escapeHTML(item.Status) + '">' + escapeHTML(item.Status) + '</span>' +
+      '<div class="share-url">' + escapeHTML(item.URL) + '</div>' +
+      '<div class="share-items">' + names + '</div>' +
+      '<div class="share-meta"><span>Remaining: <b class="remaining">' + escapeHTML(remaining(item)) + '</b></span><span>Views: ' + item.PageViews + '</span><span>Downloads: ' + item.Downloads + '</span><span>Idle: ' + item.IdleTimeoutMinutes + 'm</span><span>Max: ' + item.MaxLifetimeMinutes + 'm</span></div></div>' +
+      '<div class="actions"><button class="secondary copy" data-url="' + escapeHTML(item.URL) + '">Copy</button><button class="secondary qr" data-id="' + escapeHTML(item.ID) + '">QR</button>' + revoke + '</div>' +
+      '</article>';
+  }).join('');
+}
+
+async function loadShares() {
+  try {
+    var response = await fetch('/api/admin/shares');
+    if (!response.ok) throw new Error('Could not load links');
+    shares = await response.json();
+    renderShares();
+  } catch (error) {
+    document.getElementById('share-list').innerHTML = '<div class="empty error">' + escapeHTML(error.message) + '</div>';
+  }
+}
+document.getElementById('refresh').addEventListener('click', loadShares);
+document.getElementById('share-list').addEventListener('click', async function(event){
+  var button = event.target.closest('button');
+  if (!button) return;
+  if (button.classList.contains('copy')) {
+    var label = button.textContent;
+    try {
+      await copyText(button.dataset.url);
+      button.textContent = 'Copied';
+      setTimeout(function(){ if (button.isConnected) button.textContent = 'Copy'; }, 1200);
+    } catch (error) {
+      button.textContent = 'Copy failed';
+      setTimeout(function(){ if (button.isConnected) button.textContent = label; }, 1400);
+    }
+  }
+  if (button.classList.contains('qr')) {
+    var item = shares.find(function(value){ return value.ID === button.dataset.id; });
+    if (item) openQR(item);
+  }
+  if (button.classList.contains('revoke')) {
+    if (!confirm('Revoke this share link now?')) return;
+    var response = await fetch('/api/admin/shares/' + encodeURIComponent(button.dataset.id), {method:'DELETE'});
+    if (response.ok) await loadShares();
+  }
+});
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).catch(function(){ return fallbackCopy(text); });
+  }
+  return fallbackCopy(text);
+}
+function fallbackCopy(text) {
+  return new Promise(function(resolve, reject){
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.top = '0';
+    area.style.left = '0';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+    area.setSelectionRange(0, text.length);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+    document.body.removeChild(area);
+    if (ok) resolve(); else reject(new Error('Copy failed'));
+  });
+}
+function openQR(item) {
+  modalURL = item.URL;
+  document.getElementById('qr-image').src = item.QRDataURL;
+  document.getElementById('modal-url').textContent = item.URL;
+  document.getElementById('copy-modal').textContent = 'Copy link';
+  document.getElementById('qr-modal').classList.add('open');
+}
+document.getElementById('close-modal').addEventListener('click', function(){ document.getElementById('qr-modal').classList.remove('open'); });
+document.getElementById('copy-modal').addEventListener('click', async function(){
+  var button = this;
+  try {
+    await copyText(modalURL);
+    button.textContent = 'Copied';
+  } catch (error) {
+    button.textContent = 'Copy failed';
+  }
+});
+document.getElementById('qr-modal').addEventListener('click', function(event){ if(event.target === this) this.classList.remove('open'); });
+setInterval(function(){
+  var nodes = document.querySelectorAll('#share-list .remaining');
+  shares.forEach(function(item, index){
+    if (nodes[index]) nodes[index].textContent = remaining(item);
+  });
+}, 1000);
+setInterval(loadShares,15000);
+loadShares();
+updateSelection();
+</script>
+</body>
+</html>

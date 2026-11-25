@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>lanserve shared files</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f5f7fa;color:#1e293b;min-height:100vh}
+header{background:#fff;border-bottom:1px solid #e2e8f0;padding:15px 24px;display:flex;justify-content:space-between;align-items:center;gap:14px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+h1{font-size:1.05rem;margin:0;color:#4f46e5}.timer{font-size:.8rem;color:#64748b;background:#f1f5f9;padding:7px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
+nav{padding:10px 24px;font-size:.82rem;background:#fff;border-bottom:1px solid #e2e8f0}nav a{color:#4f46e5;text-decoration:none}nav span{margin:0 5px;color:#cbd5e1}
+.wrap{padding:22px 24px 60px;max-width:1100px;margin:auto}.notice{font-size:.83rem;color:#64748b;margin-bottom:12px}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+table{width:100%;border-collapse:collapse}th,td{padding:11px 14px;text-align:left;border-bottom:1px solid #f1f5f9;font-size:.88rem}th{background:#f8fafc;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color:#1e293b;text-decoration:none}.name a:hover{color:#4f46e5}.size{text-align:right;color:#94a3b8;white-space:nowrap}.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}.empty{text-align:center;padding:55px;color:#94a3b8}
+@media(max-width:600px){header,.wrap{padding-left:14px;padding-right:14px}.date{display:none}th,td{padding:10px 8px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>📦 Shared files</h1>
+  <div id="timer" class="timer" data-expiry="{{.ExpiresAt.Unix}}" data-hard-expiry="{{.HardExpiresAt.Unix}}" data-idle="{{.IdleTimeoutMinutes}}">Active</div>
+</header>
+<nav>
+  {{range $i,$c := .Parents}}
+    {{if $i}}<span>/</span>{{end}}
+    <a href="/s/{{$.Token}}/{{if $c.Path}}?path={{urlquery $c.Path}}{{end}}">{{$c.Name}}</a>
+  {{end}}
+</nav>
+<main class="wrap">
+  <p class="notice">This temporary link only provides access to the files and folders selected by the administrator. Activity extends its idle timer within the maximum lifetime.</p>
+  <div class="card">
+    {{if .Entries}}
+    <table>
+      <thead><tr><th></th><th>Name</th><th class="size">Size</th><th class="date">Modified</th></tr></thead>
+      <tbody>
+      {{range .Entries}}
+      <tr>
+        <td>{{if .IsDir}}📁{{else}}📄{{end}}</td>
+        <td class="name"><a href="/s/{{$.Token}}/?path={{urlquery .RelPath}}"{{if not .IsDir}} download data-download="true"{{end}}>{{.Name}}</a></td>
+        <td class="size">{{if .IsDir}}—{{else}}{{humanSize .Size}}{{end}}</td>
+        <td class="date">{{formatTime .ModTime}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}<div class="empty">No available items in this share.</div>{{end}}
+  </div>
+</main>
+<script>
+var timer = document.getElementById('timer');
+var expiry = Number(timer.dataset.expiry) * 1000;
+var hardExpiry = Number(timer.dataset.hardExpiry) * 1000;
+var idleMinutes = Number(timer.dataset.idle);
+function updateTimer(){
+  var seconds = Math.max(0, Math.floor((expiry-Date.now())/1000));
+  if (seconds <= 0) { timer.textContent = 'Expired'; return; }
+  if (seconds < 60) timer.textContent = 'Expires in ' + seconds + 's';
+  else if (seconds < 3600) timer.textContent = 'Expires in ' + Math.floor(seconds/60) + 'm ' + (seconds%60) + 's';
+  else timer.textContent = 'Expires in ' + Math.floor(seconds/3600) + 'h ' + Math.floor((seconds%3600)/60) + 'm';
+}
+updateTimer();
+setInterval(updateTimer,1000);
+document.querySelectorAll('[data-download="true"]').forEach(function(link){
+  link.addEventListener('click',function(){
+    expiry = Math.min(Date.now() + idleMinutes*60000, hardExpiry);
+    updateTimer();
+  });
+});
+</script>
+</body>
+</html>

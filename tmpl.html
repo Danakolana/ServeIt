@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>lanserve – {{.CurrentPath}}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#f5f7fa;color:#1e293b;min-height:100vh}
+
+/* ── header ── */
+header{
+  background:#ffffff;
+  border-bottom:1px solid #e2e8f0;
+  padding:12px 24px;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  box-shadow:0 1px 3px rgba(0,0,0,.06);
+}
+header h1{font-size:1.05rem;font-weight:700;color:#4f46e5;white-space:nowrap;letter-spacing:-.3px}
+.admin-link{font-size:.82rem;color:#4338ca;text-decoration:none;background:#eef2ff;padding:7px 10px;border-radius:8px;font-weight:600}
+
+/* ── search box ── */
+#search-wrap{flex:1;min-width:220px;position:relative}
+#search-wrap svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);pointer-events:none;color:#94a3b8}
+#search-box{
+  width:100%;padding:8px 14px 8px 36px;
+  border-radius:8px;border:1.5px solid #cbd5e1;
+  background:#f8fafc;color:#1e293b;font-size:.93rem;outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+#search-box:focus{border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.12);background:#fff}
+#search-box::placeholder{color:#94a3b8}
+
+/* ── breadcrumb ── */
+nav{
+  padding:10px 24px;font-size:.82rem;color:#64748b;
+  background:#fff;border-bottom:1px solid #e2e8f0;
+}
+nav a{color:#4f46e5;text-decoration:none}
+nav a:hover{text-decoration:underline}
+nav span{margin:0 5px;color:#cbd5e1}
+
+/* ── container ── */
+.container{padding:20px 24px 60px}
+
+/* ── table ── */
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+table{width:100%;border-collapse:collapse}
+thead tr{background:#f8fafc;border-bottom:1px solid #e2e8f0}
+th{text-align:left;padding:10px 14px;font-size:.75rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+tbody tr{border-bottom:1px solid #f1f5f9;transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:#f8f7ff}
+td{padding:9px 14px;font-size:.9rem}
+td.icon{width:30px;padding-right:0}
+.icon-dir{color:#f59e0b}
+.icon-file{color:#3b82f6}
+td.name a{color:#1e293b;text-decoration:none;font-weight:450}
+td.name a:hover{color:#4f46e5}
+td.size{color:#94a3b8;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:.83rem}
+td.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}
+
+/* ── search status ── */
+#search-status{font-size:.8rem;color:#64748b;margin-bottom:10px;min-height:1.2em}
+
+.empty{text-align:center;padding:60px 0;color:#94a3b8;font-size:.9rem}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📡 lanserve</h1>
+  <div id="search-wrap">
+    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
+    </svg>
+    <input id="search-box" type="search" placeholder="Search files and folders…" autocomplete="off" spellcheck="false"/>
+  </div>
+  <a class="admin-link" href="/admin">Super admin</a>
+</header>
+
+<nav>
+  {{range $i,$c := .Parents}}
+    {{if $i}}<span>/</span>{{end}}
+    <a href="{{$c.Path}}">{{$c.Name}}</a>
+  {{end}}
+</nav>
+
+<div class="container">
+  <p id="search-status"></p>
+
+  <!-- directory listing -->
+  <div id="dir-listing" class="card">
+    {{if .Entries}}
+    <table>
+      <thead><tr>
+        <th class="icon"></th>
+        <th>Name</th>
+        <th style="text-align:right">Size</th>
+        <th>Modified</th>
+      </tr></thead>
+      <tbody>
+      {{range .Entries}}
+      <tr>
+        <td class="icon">
+          {{if .IsDir}}<span class="icon-dir">📁</span>
+          {{else}}<span class="icon-file">📄</span>{{end}}
+        </td>
+        <td class="name">
+          {{if .IsDir}}
+            <a href="/{{.RelPath}}/">{{.Name}}</a>
+          {{else}}
+            <a href="/{{.RelPath}}" download>{{.Name}}</a>
+          {{end}}
+        </td>
+        <td class="size">{{if .IsDir}}—{{else}}{{humanSize .Size}}{{end}}</td>
+        <td class="date">{{formatTime .ModTime}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="empty">Empty directory</p>
+    {{end}}
+  </div>
+
+  <!-- search results (hidden until search is active) -->
+  <div id="search-results" style="display:none" class="card">
+    <table>
+      <thead><tr>
+        <th class="icon"></th>
+        <th>Path</th>
+        <th style="text-align:right">Size</th>
+      </tr></thead>
+      <tbody id="search-tbody"></tbody>
+    </table>
+    <p id="search-empty" class="empty" style="display:none">No matching files or folders</p>
+  </div>
+</div>
+
+<script>
+const box       = document.getElementById('search-box');
+const listing   = document.getElementById('dir-listing');
+const results   = document.getElementById('search-results');
+const tbody     = document.getElementById('search-tbody');
+const noResult  = document.getElementById('search-empty');
+const statusEl  = document.getElementById('search-status');
+
+let timer = null;
+
+function humanSize(n){
+  if(n < 1024) return n + ' B';
+  const u = ['KB','MB','GB','TB'];
+  let i = -1;
+  do { n /= 1024; i++; } while(n >= 1024 && i < u.length - 1);
+  return n.toFixed(1) + ' ' + u[i];
+}
+
+function showListing(){
+  listing.style.display  = 'block';
+  results.style.display  = 'none';
+  statusEl.textContent   = '';
+}
+
+function showResults(){
+  listing.style.display  = 'none';
+  results.style.display  = 'block';
+}
+
+box.addEventListener('input', () => {
+  clearTimeout(timer);
+  const q = box.value.trim();
+  if (!q) { showListing(); return; }
+  statusEl.textContent = 'Searching…';
+  timer = setTimeout(() => doSearch(q), 250);
+});
+
+async function doSearch(q) {
+  try {
+    const resp = await fetch('/search?q=' + encodeURIComponent(q));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+
+    tbody.innerHTML = '';
+    showResults();
+
+    if (!data || data.length === 0) {
+      noResult.style.display  = 'block';
+      statusEl.textContent    = 'No results for "' + q + '"';
+      return;
+    }
+
+    noResult.style.display = 'none';
+    statusEl.textContent   = data.length + (data.length === 200 ? '+ ' : ' ') + 'result' + (data.length === 1 ? '' : 's');
+
+    data.forEach(item => {
+      const href    = '/' + item.relPath + (item.isDir ? '/' : '');
+      const icon    = item.isDir ? '📁' : '📄';
+      const cls     = item.isDir ? 'icon-dir' : 'icon-file';
+      const sz      = item.isDir ? '—' : humanSize(item.size);
+      const dlAttr  = item.isDir ? '' : ' download';
+      tbody.insertAdjacentHTML('beforeend',
+        `<tr>
+          <td class="icon"><span class="${cls}">${icon}</span></td>
+          <td class="name"><a href="${href}"${dlAttr}>${escHtml(item.relPath)}</a></td>
+          <td class="size">${sz}</td>
+        </tr>`);
+    });
+  } catch(e) {
+    statusEl.textContent = 'Search error: ' + e.message;
+  }
+}
+
+function escHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
