@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestChooseLANURLsPrefers192168(t *testing.T) {
@@ -55,6 +56,13 @@ func TestDownloadZipIsStoredAndStreamsSelection(t *testing.T) {
 	downloadHandler(planRec, planReq)
 	if planRec.Code != http.StatusOK || !strings.Contains(planRec.Body.String(), `"bytes":12`) || !strings.Contains(planRec.Body.String(), `"files":2`) {
 		t.Fatalf("plan %d %s", planRec.Code, planRec.Body.String())
+	}
+	checkReq := httptest.NewRequest(http.MethodPost, "/api/download?check=1", strings.NewReader(`{"paths":["a.txt","sub"]}`))
+	checkReq.Header.Set("Content-Type", "application/json")
+	checkRec := httptest.NewRecorder()
+	downloadHandler(checkRec, checkReq)
+	if checkRec.Code != http.StatusOK {
+		t.Fatalf("check %d %s", checkRec.Code, checkRec.Body.String())
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/download", strings.NewReader(`{"paths":["a.txt","sub"]}`))
@@ -113,9 +121,83 @@ func TestDownloadRejectsMissingAndEscapingPaths(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status %d", rec.Code)
 	}
+	checkReq := httptest.NewRequest(http.MethodPost, "/api/download?check=1", strings.NewReader(`{"paths":["missing.txt"]}`))
+	checkReq.Header.Set("Content-Type", "application/json")
+	checkRec := httptest.NewRecorder()
+	downloadHandler(checkRec, checkReq)
+	if checkRec.Code != http.StatusBadRequest {
+		t.Fatalf("missing check status = %d", checkRec.Code)
+	}
 	_, _, err = collectZipEntries([]string{"nope"}, func(string) bool { return false })
 	if err == nil || err.Error() != "this path is not included in the share" {
 		t.Fatalf("allow error = %v", err)
+	}
+}
+
+func TestShareDoesNotFollowSymlinkOutsideSelection(t *testing.T) {
+	dir := t.TempDir()
+	restoreRoot(t, dir)
+	if err := os.Mkdir(filepath.Join(dir, "shared"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "private"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "private", "secret.txt"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "private", "secret.txt"), filepath.Join(dir, "shared", "link.txt")); err != nil {
+		t.Fatal(err)
+	}
+	share := Share{Items: []ShareItem{{Path: "shared", IsDir: true}}}
+	if shareAllows(&share, "shared/link.txt") {
+		t.Fatal("symlink into private directory was allowed")
+	}
+	previousStore := shareStore
+	shareStore = &ShareStore{shares: []*Share{{Token: "test", Items: share.Items, ExpiresAt: time.Now().Add(time.Hour), HardExpiresAt: time.Now().Add(time.Hour)}}}
+	t.Cleanup(func() { shareStore = previousStore })
+	rec := httptest.NewRecorder()
+	shareHandler(rec, httptest.NewRequest(http.MethodGet, "/s/test/?path=shared/link.txt", nil))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("guest download status = %d", rec.Code)
+	}
+	checkReq := httptest.NewRequest(http.MethodPost, "/s/test/download?check=1", strings.NewReader(`{"paths":["shared/link.txt"]}`))
+	checkReq.Header.Set("Content-Type", "application/json")
+	checkRec := httptest.NewRecorder()
+	shareDownloadHandler(checkRec, checkReq, "test")
+	if checkRec.Code != http.StatusForbidden {
+		t.Fatalf("guest check status = %d", checkRec.Code)
+	}
+	entries, _, err := collectZipEntries([]string{"shared"}, func(rel string) bool { return shareAllows(&share, rel) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.name == "shared/link.txt" {
+			t.Fatal("private file included in archive")
+		}
+	}
+}
+
+func TestShareStateSymlinkCannotBeDownloaded(t *testing.T) {
+	dir := t.TempDir()
+	restoreRoot(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, shareStateFilename), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, shareStateFilename), filepath.Join(dir, "alias.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := secureResolve("alias.json"); err == nil {
+		t.Fatal("share state alias resolved")
+	}
+	rec := httptest.NewRecorder()
+	browseHandler(rec, httptest.NewRequest(http.MethodGet, "/alias.json", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("browser alias status = %d", rec.Code)
+	}
+	if _, _, err := collectZipEntries([]string{"alias.json"}, nil); err == nil {
+		t.Fatal("share state alias added to archive")
 	}
 }
 

@@ -36,6 +36,14 @@ func downloadHandler(w http.ResponseWriter, r *http.Request) {
 		writeShareError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
+	if r.URL.Query().Get("check") == "1" {
+		if err := validateDownloadPaths(paths, nil); err != nil {
+			writeShareError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeShareJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
 	entries, total, err := collectZipEntries(paths, nil)
 	if err != nil {
 		writeShareError(w, http.StatusBadRequest, err.Error())
@@ -64,15 +72,20 @@ func shareDownloadHandler(w http.ResponseWriter, r *http.Request, token string) 
 		writeShareError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	entries, total, err := collectZipEntries(paths, func(rel string) bool {
+	allow := func(rel string) bool {
 		return shareAllows(&shared, rel)
-	})
-	if err != nil {
-		status := http.StatusBadRequest
-		if err.Error() == "this path is not included in the share" {
-			status = http.StatusForbidden
+	}
+	if r.URL.Query().Get("check") == "1" {
+		if err := validateDownloadPaths(paths, allow); err != nil {
+			writeShareError(w, downloadErrorStatus(err), err.Error())
+			return
 		}
-		writeShareError(w, status, err.Error())
+		writeShareJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	entries, total, err := collectZipEntries(paths, allow)
+	if err != nil {
+		writeShareError(w, downloadErrorStatus(err), err.Error())
 		return
 	}
 	if r.URL.Query().Get("plan") == "1" {
@@ -84,6 +97,39 @@ func shareDownloadHandler(w http.ResponseWriter, r *http.Request, token string) 
 		return
 	}
 	writeZipDownload(w, entries)
+}
+
+func downloadErrorStatus(err error) int {
+	if err.Error() == "this path is not included in the share" {
+		return http.StatusForbidden
+	}
+	return http.StatusBadRequest
+}
+
+func validateDownloadPaths(paths []string, allow func(string) bool) error {
+	if len(paths) == 0 {
+		return errors.New("select at least one file or folder")
+	}
+	if len(paths) > maxDownloadSelections {
+		return errors.New("too many selected items")
+	}
+	for _, raw := range paths {
+		rel, err := cleanShareRel(raw, false)
+		if err != nil || isShareStatePath(rel) {
+			return fmt.Errorf("invalid path: %s", raw)
+		}
+		if allow != nil && !allow(rel) {
+			return errors.New("this path is not included in the share")
+		}
+		abs, err := secureResolve(rel)
+		if err != nil {
+			return errors.New("a selected path is no longer available")
+		}
+		if _, err := os.Stat(abs); err != nil {
+			return errors.New("a selected path is no longer available")
+		}
+	}
+	return nil
 }
 
 func zipPlan(entries []zipEntry, total int64) map[string]int64 {
@@ -177,9 +223,6 @@ func streamStoredZip(w http.ResponseWriter, entries []zipEntry) (bool, error) {
 			return started, err
 		}
 		file.Close()
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
-		}
 	}
 	if writer == nil {
 		return false, errors.New("nothing available to download")
@@ -243,7 +286,12 @@ func collectZipEntries(paths []string, allow func(string) bool) ([]zipEntry, int
 				}
 				return nil
 			}
-			if allow != nil && !allow(child) {
+			suffix, err := filepath.Rel(abs, path)
+			if err != nil {
+				return err
+			}
+			name := filepath.ToSlash(filepath.Join(prefix, suffix))
+			if allow != nil && !allow(name) {
 				if d.IsDir() {
 					return filepath.SkipDir
 				}
@@ -252,10 +300,6 @@ func collectZipEntries(paths []string, allow func(string) bool) ([]zipEntry, int
 			info, err := os.Stat(real)
 			if err != nil {
 				return fmt.Errorf("a selected path is no longer available")
-			}
-			name := child
-			if prefix != "" && strings.HasPrefix(child, prefix) {
-				name = child
 			}
 			if info.IsDir() {
 				if d.Type()&os.ModeSymlink != 0 {

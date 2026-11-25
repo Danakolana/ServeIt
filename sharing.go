@@ -305,6 +305,13 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		visible := entries[:0]
+		for _, entry := range entries {
+			if shareAllows(&shared, entry.RelPath) {
+				visible = append(visible, entry)
+			}
+		}
+		entries = visible
 	}
 	shared, err = shareStore.Use(token, rel, false)
 	if err != nil {
@@ -373,8 +380,19 @@ func selectedEntries(shared *Share) []Entry {
 }
 
 func shareAllows(shared *Share, rel string) bool {
+	requested, err := secureResolve(rel)
+	if err != nil {
+		return false
+	}
 	for _, item := range shared.Items {
-		if rel == item.Path || (item.IsDir && strings.HasPrefix(rel, item.Path+"/")) {
+		if rel != item.Path && !(item.IsDir && strings.HasPrefix(rel, item.Path+"/")) {
+			continue
+		}
+		selected, err := secureResolve(item.Path)
+		if err != nil {
+			continue
+		}
+		if requested == selected || (item.IsDir && strings.HasPrefix(requested, selected+string(filepath.Separator))) {
 			return true
 		}
 	}
@@ -408,6 +426,9 @@ func secureResolve(rel string) (string, error) {
 	within, err := filepath.Rel(resolvedRoot, real)
 	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) || filepath.IsAbs(within) {
 		return "", errors.New("path escapes served root")
+	}
+	if isShareStatePath(filepath.ToSlash(within)) {
+		return "", errors.New("path is reserved for share state")
 	}
 	return real, nil
 }

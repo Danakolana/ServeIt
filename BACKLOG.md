@@ -65,3 +65,19 @@ The pages should stay simple, minimal, and polished. This is a refinement of the
 - Keep the light background, short labels, and the current density. Do not add illustrations, gradients, or extra chrome.
 - Check the admin share cards and the file tables at a narrow width. Actions must remain reachable.
 - Do not block items 1–4 on this pass, and do not restyle ahead of the selection and sort controls those items add.
+
+## 6. Benchmark and improve multi-file LAN download throughput
+
+**Status: implemented. Two-device LAN measurement remains pending.**
+
+The archive already stores file bytes without compression and streams them, which is a good baseline for large files. For folder downloads, the browser's `?plan=1` request walks the full tree and the download request walks it again. The ZIP writer also flushes the HTTP response after every file. Both costs can matter when a folder contains thousands of small files.
+
+- Benchmark a representative large file and a folder with many small files over loopback and a real LAN. Record time to first byte, total throughput, memory use, and request count.
+- Remove the per-file flush if the benchmark shows it improves throughput while the transfer still starts promptly. Let the HTTP server buffer writes normally, or flush at a measured interval.
+- Avoid the second full tree walk for the plan when it materially delays download start. Keep the selection count and size accurate enough for the UI, and preserve the current streaming, stored ZIP format and path checks.
+- Keep single-file downloads on the direct file-serving path so the HTTP server can use its optimized file transfer behavior.
+- Re-run the same benchmarks and retain only changes with a clear improvement and no meaningful memory regression.
+
+Implementation: the ZIP writer no longer flushes after each file. The browser reuses its folder plan for the size display and makes a lightweight `?check=1` request before submitting the archive form, avoiding another full tree walk. The check still rejects missing selected paths and expired or unauthorized shares. Direct single-file links are unchanged.
+
+Loopback probe (`PERF_PROBE=1 go test -run TestPerformanceProbe -v`): 2,000 files of 4 KiB each, three runs, median values. Click-to-first-byte fell from 35.2 ms to 14.8 ms; total click-to-complete fell from 108.9 ms to 70.4 ms; effective throughput rose from 74.1 to 114.5 MiB/s. Both flows used two requests; the preflight changed from a full plan to a lightweight check. Total Go allocation fell from about 76.9 to 72.2 MB per run. A 32 MiB single-file ZIP probe was noisy and did not show a clear gain. These numbers are local loopback results, not a physical LAN measurement.

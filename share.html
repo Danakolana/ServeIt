@@ -134,8 +134,11 @@ function bindListing(table){
   var status = document.getElementById('download-status');
   var selectAll = document.getElementById('select-all');
   var planToken = 0;
+  var plannedKey = '';
+  var plannedSummary = '';
   function selected(){ return picks.filter(function(item){ return item.checked; }); }
   function updatePick(){
+    var token = ++planToken;
     var rows = selected();
     var bytes = 0, hasDir = false;
     rows.forEach(function(item){
@@ -145,16 +148,19 @@ function bindListing(table){
     button.disabled = rows.length === 0;
     if(!rows.length){ summary.textContent = '0 selected'; status.textContent = ''; return; }
     if(!hasDir){ summary.textContent = rows.length + ' selected · ' + humanSize(bytes); return; }
+    var paths = rows.map(function(item){ return item.value; });
+    var key = JSON.stringify(paths);
+    if(key === plannedKey && plannedSummary){ summary.textContent = plannedSummary; button.disabled = false; return; }
     summary.textContent = rows.length + ' selected · counting…';
     button.disabled = true;
-    var token = ++planToken;
-    var paths = rows.map(function(item){ return item.value; });
     fetch(endpoint + '?plan=1', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths:paths})})
       .then(function(resp){ return resp.json().then(function(body){ return {ok:resp.ok, body:body}; }); })
       .then(function(result){
         if(token !== planToken) return;
         if(!result.ok) throw new Error(result.body.error || 'Could not measure the selection');
-        summary.textContent = rows.length + ' selected · ' + result.body.files + ' files · ' + humanSize(result.body.bytes);
+        plannedKey = key;
+        plannedSummary = rows.length + ' selected · ' + result.body.files + ' files · ' + humanSize(result.body.bytes);
+        summary.textContent = plannedSummary;
         button.disabled = false;
       }).catch(function(error){
         if(token !== planToken) return;
@@ -175,10 +181,11 @@ function bindListing(table){
   button.addEventListener('click', function(){
     expiry = Math.min(Date.now() + idleMinutes*60000, hardExpiry);
     updateTimer();
-    startZipDownload(button, status, endpoint, selected().map(function(item){ return item.value; }), updatePick);
+    var paths = selected().map(function(item){ return item.value; });
+    startZipDownload(button, status, endpoint, paths, updatePick, plannedSummary && JSON.stringify(paths) === plannedKey);
   });
 }
-function startZipDownload(button, status, url, paths, done){
+function startZipDownload(button, status, url, paths, done, planReady){
   if(!paths.length) return;
   button.disabled = true;
   status.className = 'status';
@@ -201,7 +208,7 @@ function startZipDownload(button, status, url, paths, done){
           });
         });
     }
-    return fetch(url + '?plan=1', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths:paths})})
+    return fetch(url + (planReady ? '?check=1' : '?plan=1'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths:paths})})
       .then(function(resp){ return resp.json().then(function(body){ if(!resp.ok) throw new Error(body.error || 'Download failed'); }); })
       .then(function(){
         status.textContent = 'Downloading…';

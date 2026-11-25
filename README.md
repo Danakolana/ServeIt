@@ -113,6 +113,8 @@ On startup, after the port is open, one panel lists the directory, port, file-br
 
 The main browser and a guest link are different doors. `--password` locks the full tree. A share link does not unlock anything outside its selection, and it does not require the file-browser password.
 
+ServeIt listens over plain HTTP by default. Basic-auth passwords, share URLs, and file contents can be observed by someone who can inspect traffic on the network. Use it on a trusted LAN; for untrusted networks, put it behind an HTTPS reverse proxy or tunnel.
+
 ## Build from source
 
 ```bash

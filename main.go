@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -108,7 +109,11 @@ func main() {
 		log.Fatalf("cannot listen on port %s: %v", *port, err)
 	}
 	printStartup(*port)
-	if err := http.Serve(listener, securityHeaders(mux)); err != nil {
+	server := &http.Server{
+		Handler:           securityHeaders(mux),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	if err := server.Serve(listener); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -151,7 +156,7 @@ func browseHandler(w http.ResponseWriter, r *http.Request) {
 
 	// if it's a file, serve it for download
 	if !info.IsDir() {
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, info.Name()))
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": info.Name()}))
 		http.ServeFile(w, r, abs)
 		return
 	}
@@ -183,14 +188,14 @@ func readDir(abs, rel string) ([]Entry, error) {
 
 	var entries []Entry
 	for _, de := range dirEntries {
-		if isShareStatePath(filepath.ToSlash(filepath.Join(rel, de.Name()))) {
+		relPath := filepath.ToSlash(filepath.Join(rel, de.Name()))
+		if _, err := secureResolve(relPath); err != nil {
 			continue
 		}
 		info, err := de.Info()
 		if err != nil {
 			continue
 		}
-		relPath := filepath.ToSlash(filepath.Join(rel, de.Name()))
 		entries = append(entries, Entry{
 			Name:    de.Name(),
 			RelPath: relPath,
@@ -250,6 +255,9 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(strings.ToLower(d.Name()), q) {
 			rel, _ := filepath.Rel(root, path)
 			rel = filepath.ToSlash(rel)
+			if _, err := secureResolve(rel); err != nil {
+				return nil
+			}
 			var size int64
 			if !d.IsDir() {
 				if info, e := d.Info(); e == nil {
