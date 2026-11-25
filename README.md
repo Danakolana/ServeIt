@@ -24,11 +24,11 @@ wget -O ServeIt https://github.com/Danakolana/ServeIt/releases/latest/download/S
 wget -O ServeIt.exe https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-windows-amd64.exe
 ```
 
-On macOS, `chmod +x ServeIt` and then `./ServeIt`. On Windows, run `ServeIt.exe` from the folder you downloaded. `releases/latest` always means the newest published tag. These URLs answer once the first `v*` release exists.
+On macOS, `chmod +x ServeIt` and then `./ServeIt`. On Windows, run `ServeIt.exe` from the folder you downloaded. `releases/latest` always points at the newest published tag.
 
 ## Releases
 
-A release is a git tag named like `v1.2.3`. Pushing that tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which cross-compiles five static binaries and attaches them to the GitHub release, plus `SHA256SUMS`:
+Publishing a tag is what creates the GitHub release. Pushing a tag named like `v1.2.3` runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which cross-compiles five static binaries and attaches them to that release, plus `SHA256SUMS`. You can also start the same workflow manually from the Actions tab and type the tag name there.
 
 | File | System |
 |---|---|
@@ -49,7 +49,11 @@ The workflow needs no extra secrets. `contents: write` on the tag workflow is en
 
 The folder on this machine is already a link. Open it from a phone, a laptop on the same network, or hand a guest only the files you picked.
 
-![File browser](docs/file-browser.png)
+![Terminal and file browser](docs/startup-and-browser.png)
+
+![Admin panel](docs/admin.png)
+
+![Shared link](docs/share.png)
 
 ServeIt is a LAN file server. Point it at any directory, hand someone a link or a QR code, and keep the rest of the disk private.
 
@@ -57,7 +61,7 @@ Most one-command file servers publish the whole tree and stop there. You install
 
 ServeIt is the opposite shape:
 
-- **One file.** The UI, search, auth, and QR codes are compiled in. A release binary is one static file, about **9 MB**. There is no Node, Python, or package directory beside it.
+- **One file.** The UI, search, auth, and QR codes are compiled in. A release binary is one static file, about **13 MB**. There is no Node, Python, or package directory beside it.
 - **Any path, not only the shell’s current directory.** `--dir` is the served root. Everything else is a flag.
 - **A real guest boundary.** The admin panel lets you check individual files and folders, including a slice of a subdirectory. Unchecked siblings never appear on the guest link.
 - **Links that expire.** Idle timeout plus a hard maximum of 24 hours. Page views and downloads are counted. You can revoke a link immediately.
@@ -115,4 +119,4 @@ The main browser and a guest link are different doors. `--password` locks the fu
 go build -o ServeIt .
 ```
 
-Go 1.26 or newer. The HTML pages are embedded with `//go:embed`, so the binary does not need `tmpl.html`, `admin.html`, or `share.html` next to it at runtime. Cross-compiles use the same command with `GOOS` and `GOARCH`; the release workflow is the version of that command that publishes all five targets.
+Go 1.24 or newer. The HTML pages are embedded with `//go:embed`, so the binary does not need `tmpl.html`, `admin.html`, or `share.html` next to it at runtime. Cross-compiles use the same command with `GOOS` and `GOARCH`; the release workflow is the version of that command that publishes all five targets.

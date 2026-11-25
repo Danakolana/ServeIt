@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create or update (for example v1.0.0)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -13,6 +19,7 @@ jobs:
     name: ${{ matrix.asset }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - goos: linux
@@ -34,17 +41,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.24.x"
+          cache: true
       - name: Build static binary
         env:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: go build -trimpath -ldflags "-s -w" -o ${{ matrix.asset }} .
+        run: go build -trimpath -ldflags "-s -w" -o "${{ matrix.asset }}" .
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
+          if-no-files-found: error
 
   release:
     name: Publish GitHub release
@@ -53,11 +62,36 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: artifacts
+          pattern: ServeIt-*
           merge-multiple: true
+      - name: Stage binaries
+        run: |
+          mkdir -p dist
+          find artifacts -type f \( -name 'ServeIt-*' -o -name '*.exe' \) -exec cp -v {} dist/ \;
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -ge 5
       - name: Checksums
-        run: cd dist && sha256sum * > SHA256SUMS
+        run: |
+          cd dist
+          sha256sum ServeIt-* > SHA256SUMS
+      - name: Resolve release tag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          tag_name: ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.meta.outputs.tag }}
+          files: |
+            dist/ServeIt-linux-amd64
+            dist/ServeIt-linux-arm64
+            dist/ServeIt-macos-amd64
+            dist/ServeIt-macos-arm64
+            dist/ServeIt-windows-amd64.exe
+            dist/SHA256SUMS
           generate_release_notes: true

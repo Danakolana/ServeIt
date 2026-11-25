@@ -100,6 +100,7 @@ td.num{text-align:right;color:#64748b;font-variant-numeric:tabular-nums}.select-
   </div>
 </div>
 <script>
+var apiBase = window.location.protocol + '//' + window.location.host;
 var shares = [];
 var checks = Array.from(document.querySelectorAll('.item-check'));
 var savedSelection = [];
@@ -137,7 +138,7 @@ createButton.addEventListener('click', async function(){
   message.textContent = 'Creating link…';
   createButton.disabled = true;
   try {
-    var response = await fetch('/api/admin/shares', {
+    var response = await fetch(apiBase + '/api/admin/shares', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({items:items,idleTimeoutMinutes:idle,maxLifetimeMinutes:maximum})
@@ -189,7 +190,7 @@ function renderShares() {
 
 async function loadShares() {
   try {
-    var response = await fetch('/api/admin/shares');
+    var response = await fetch(apiBase + '/api/admin/shares');
     if (!response.ok) throw new Error('Could not load links');
     shares = await response.json();
     renderShares();
@@ -218,7 +219,7 @@ document.getElementById('share-list').addEventListener('click', async function(e
   }
   if (button.classList.contains('revoke')) {
     if (!confirm('Revoke this share link now?')) return;
-    var response = await fetch('/api/admin/shares/' + encodeURIComponent(button.dataset.id), {method:'DELETE'});
+    var response = await fetch(apiBase + '/api/admin/shares/' + encodeURIComponent(button.dataset.id), {method:'DELETE'});
     if (response.ok) await loadShares();
   }
 });
