@@ -15,9 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-	"unsafe"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -864,24 +862,6 @@ func runeLen(value string) int {
 		n++
 	}
 	return n
-}
-
-func terminalWidth() int {
-	info, err := os.Stdout.Stat()
-	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
-		return 80
-	}
-	var size struct {
-		Row    uint16
-		Col    uint16
-		Xpixel uint16
-		Ypixel uint16
-	}
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, os.Stdout.Fd(), uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&size)))
-	if errno != 0 || size.Col < 40 {
-		return 80
-	}
-	return int(size.Col)
 }
 
 func discoverLANURLs(port string) ([]string, int) {

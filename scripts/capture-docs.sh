@@ -68,23 +68,25 @@ from PIL import Image, ImageDraw, ImageFont
 
 startup_path, browser_path, out_path = map(Path, sys.argv[1:4])
 raw = startup_path.read_text(errors="replace").splitlines()
-keep = []
-for line in raw:
-    if line.startswith("████") or line.startswith("▀▀▀") or line.startswith("▄"):
+keep = [line.rstrip() for line in raw]
+end = len(keep)
+for index in range(len(keep) - 1, -1, -1):
+    if any(marker in keep[index] for marker in ("█", "▄", "▀")):
+        end = index + 1
         break
-    if line.strip() == "Files" or line.strip() == "Admin":
-        break
-    keep.append(line.rstrip())
-    if len(keep) > 24:
-        break
+else:
+    end = min(len(keep), 32)
+keep = keep[:end]
+while keep and keep[0] == "":
+    keep.pop(0)
 text = "\n".join(keep).strip() + "\n"
 
 font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-font = ImageFont.truetype(font_path, 13)
-pad = 18
-line_h = 18
+font = ImageFont.truetype(font_path, 11)
+pad = 16
+line_h = 14
 lines = text.splitlines() or [""]
-term_w = 620
+term_w = 760
 term_h = pad * 2 + line_h * len(lines)
 term = Image.new("RGB", (term_w, term_h), "#0f172a")
 draw = ImageDraw.Draw(term)
