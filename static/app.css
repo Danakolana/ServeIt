@@ -59,14 +59,11 @@ th[aria-sort=descending] .sort::after{content:" \2193"}
 #toast.on{opacity:1;translate:0}
 #toast.bad{background:var(--bad);color:#fff}
 h2{font-size:18px;letter-spacing:-.02em;margin:44px 0 8px}
-.share{display:grid;gap:6px;padding:16px 0;border-top:1px solid var(--line)}
-.meta{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--mut);font-size:13.5px}
-.badge{font-weight:650;color:var(--ok);text-transform:capitalize}
+.admin-panel{border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--bg) 96%,var(--soft));box-shadow:0 10px 28px rgba(30,38,70,.06);overflow:hidden;margin-bottom:24px}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;border-bottom:1px solid var(--line);background:var(--soft)}.panel-head h2{margin:1px 0 0;font-size:18px}.eyebrow{font-size:11px;line-height:1;text-transform:uppercase;letter-spacing:.12em;font-weight:750;color:var(--acc)}.panel-note{font-size:12px;color:var(--mut);font-weight:600;white-space:nowrap}.panel-body{padding:18px 20px}.panel-body .hint{margin-bottom:10px}.panel-body .opts{margin-bottom:16px}.admin-file-list{margin:0 -20px -18px}.admin-file-list .list th,.admin-file-list .list td{padding-inline:20px}.shares-panel{margin-top:28px;margin-bottom:0}.shares-panel .panel-body{padding:12px}.share{display:grid;gap:13px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--bg);box-shadow:0 2px 7px rgba(25,34,65,.04)}.share+.share{margin-top:10px}.share-top{display:flex;align-items:center;justify-content:space-between;gap:14px}.meta{display:flex;flex-wrap:wrap;align-items:center;gap:5px 12px;color:var(--mut);font-size:13px}.badge{display:inline-flex;align-items:center;min-height:24px;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--ok) 14%,transparent);font-weight:700;color:var(--ok);text-transform:capitalize}
 .badge.expired,.badge.revoked{color:var(--mut)}
-.url{font-weight:550;word-break:break-all}
+.share-url{display:grid;gap:3px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--soft)}.share-url>span,.items>span{font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}.url{font-weight:650;word-break:break-all}
 .url:hover{color:var(--acc)}
-.items{color:var(--mut);font-size:13.5px;word-break:break-word}
-.acts{display:flex;gap:4px;margin-inline-start:-13px}
+.items{display:grid;gap:3px;color:var(--mut);font-size:13.5px;word-break:break-word}.acts{display:flex;gap:4px}.share .acts{margin-inline-start:auto}.share .btn.ghost{border:1px solid var(--line);background:var(--bg)}.share .btn.ghost:hover{border-color:var(--acc);background:var(--soft)}
 dialog{margin:auto;border:0;border-radius:18px;padding:26px;background:var(--bg);color:var(--fg);text-align:center;max-width:min(340px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.35)}
 dialog::backdrop{background:rgba(10,12,24,.55)}
 dialog img{width:240px;max-width:100%;height:auto;padding:8px;border-radius:10px;background:#fff}
@@ -74,5 +71,5 @@ dialog p{margin:12px 0 16px;color:var(--mut);font-size:13px;word-break:break-all
 dialog .acts{justify-content:center;margin:0}
 .foot{margin-top:40px;font-size:13px;color:var(--mut)}
 .foot a:hover{color:var(--acc)}
-@media(max-width:640px){.when{display:none}.wrap{padding-inline:14px}.top{flex-wrap:wrap}.search{order:3;flex-basis:100%;max-width:none;margin:0}}
+@media(max-width:640px){.when{display:none}.wrap{padding-inline:14px}.top{flex-wrap:wrap}.search{order:3;flex-basis:100%;max-width:none;margin:0}.panel-head{padding:15px 16px}.panel-note{display:none}.panel-body{padding:15px 16px}.admin-file-list{margin:0 -16px -15px}.admin-file-list .list th,.admin-file-list .list td{padding-inline:14px}.shares-panel .panel-body{padding:10px}.share-top{align-items:flex-start;flex-direction:column}.share .acts{margin-inline-start:0;flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){.dock,#toast{transition:none}}
