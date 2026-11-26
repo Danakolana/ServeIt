@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>ServeIt – {{.CurrentPath}}</title>
-<style>
+<style nonce="{{.CSPNonce}}">
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:#f5f7fa;color:#1e293b;min-height:100vh}
 
@@ -167,7 +167,7 @@ td.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}
   </footer>
 </div>
 
-<script>
+<script nonce="{{.CSPNonce}}">
 const box       = document.getElementById('search-box');
 const listing   = document.getElementById('dir-listing');
 const results   = document.getElementById('search-results');

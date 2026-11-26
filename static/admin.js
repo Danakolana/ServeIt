@@ -8,7 +8,13 @@ async function load(){
   $('#shares').innerHTML=list.length?list.map(row).join(''):'<p class="empty">No links yet. Pick files above and create one.</p>'}
  catch{$('#shares').innerHTML='<p class="empty">Could not load links.</p>'}}
 const dlg=$('#qr'),qc=$('#qc');
-function qr(s){cur=s.URL;$('#qi').src=s.QRDataURL;$('#qu').textContent=s.URL;qc.textContent='Copy link';dlg.showModal()}
+async function qr(s){
+ cur=s.URL;$('#qu').textContent=s.URL;qc.textContent='Copy link';dlg.showModal();
+ if(s.QRDataURL){$('#qi').src=s.QRDataURL;return}
+ $('#qi').removeAttribute('src');
+ try{const r=await fetch('/api/admin/shares/'+encodeURIComponent(s.ID)+'/qr');const j=await r.json();if(!r.ok)throw 0;s.QRDataURL=j.QRDataURL;$('#qi').src=s.QRDataURL}
+ catch{$('#qi').alt='QR code unavailable'}
+}
 qc.onclick=async()=>{try{await S.copy(cur);qc.textContent='Copied'}catch{qc.textContent='Copy failed'}};
 $('#qx').onclick=()=>dlg.close();dlg.onclick=e=>{if(e.target===dlg)dlg.close()};
 $('#shares').onclick=async e=>{const b=e.target.closest('button');if(!b)return;const s=list[b.dataset.i],a=b.dataset.a;

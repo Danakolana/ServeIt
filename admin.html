@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ServeIt admin</title>
-<style>
+<style nonce="{{.CSPNonce}}">
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f5f7fa;color:#1e293b}button,input{font:inherit}
 header{background:#fff;color:#1e293b;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-bottom:1px solid #e2e8f0}
 header h1{font-size:1.05rem;margin:0;color:#4f46e5;font-weight:700}.links{display:flex;gap:8px;flex-wrap:wrap}.links a{color:#4338ca;text-decoration:none;font-size:.82rem;background:#eef2ff;padding:7px 10px;border-radius:8px;font-weight:600}
@@ -100,7 +100,7 @@ td.num{text-align:right;color:#64748b;font-variant-numeric:tabular-nums}.select-
     </div>
   </div>
 </div>
-<script>
+<script nonce="{{.CSPNonce}}">
 var apiBase = window.location.protocol + '//' + window.location.host;
 var shares = [];
 var checks = Array.from(document.querySelectorAll('.item-check'));

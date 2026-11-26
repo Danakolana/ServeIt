@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ServeIt shared files</title>
-<style>
+<style nonce="{{.CSPNonce}}">
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f5f7fa;color:#1e293b;min-height:100vh}
 header{background:#fff;border-bottom:1px solid #e2e8f0;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
 h1{font-size:1.05rem;margin:0;color:#4f46e5;font-weight:700}.header-actions{display:flex;align-items:center;gap:8px}.theme-link{font-size:.8rem;color:#4338ca;text-decoration:none;background:#eef2ff;padding:7px 10px;border-radius:8px;font-weight:600}.timer{font-size:.8rem;color:#64748b;background:#f1f5f9;padding:7px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
@@ -73,7 +73,7 @@ tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color
     <p>Made by <a href="https://github.com/Danakolana" target="_blank" rel="noreferrer">danakolana</a> · <a href="https://github.com/Danakolana/ServeIt" target="_blank" rel="noreferrer">GitHub</a></p>
   </footer>
 </main>
-<script>
+<script nonce="{{.CSPNonce}}">
 var timer = document.getElementById('timer');
 var seconds = Number(timer.dataset.left);
 var hardSeconds = Number(timer.dataset.hard);

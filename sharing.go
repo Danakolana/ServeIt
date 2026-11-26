@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -25,6 +26,8 @@ import (
 const (
 	shareStateFilename       = ".serveit-shares.json"
 	legacyShareStateFilename = ".lanserve-shares.json"
+	maxShareItems            = 500
+	maxShareTimeoutMinutes   = 1440
 )
 
 var (
@@ -38,6 +41,8 @@ var (
 	activeStatePaths       []string
 )
 
+type cspNonceKey struct{}
+
 type AdminPageData struct {
 	CurrentPath    string
 	CurrentRel     string
@@ -45,6 +50,7 @@ type AdminPageData struct {
 	Parents        []Crumb
 	ThemeSwitchURL string
 	ThemeOptions   []ThemeOption
+	CSPNonce       string
 }
 
 type SharedPageData struct {
@@ -59,6 +65,7 @@ type SharedPageData struct {
 	HardRemainingSeconds int64
 	ThemeSwitchURL       string
 	ThemeOptions         []ThemeOption
+	CSPNonce             string
 }
 
 type ShareItem struct {
@@ -85,7 +92,7 @@ type Share struct {
 type ShareAdminView struct {
 	ID                 string
 	URL                string
-	QRDataURL          string
+	QRDataURL          string `json:"QRDataURL,omitempty"`
 	Items              []ShareItem
 	CreatedAt          time.Time
 	LastActivityAt     time.Time
@@ -120,9 +127,6 @@ func initSharing(configuredPassword string) error {
 	}
 	adminPassword = configuredPassword
 	if adminPassword == "" {
-		adminPassword = password
-	}
-	if adminPassword == "" {
 		adminPassword, err = randomSecret(18)
 		if err != nil {
 			return err
@@ -147,7 +151,7 @@ func initSharing(configuredPassword string) error {
 				return legacyErr
 			}
 		}
-	} else if statErr != nil {
+	} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return statErr
 	}
 	shareStore, err = loadShareStore(statePath)
@@ -183,19 +187,21 @@ func resolveStatePath() (string, error) {
 
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nonce, err := randomSecret(18)
+		if err != nil {
+			nonce = "serveit-csp-fallback"
+		}
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'nonce-"+nonce+"'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), cspNonceKey{}, nonce)))
 	})
 }
 
 func withAdminAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		user, supplied, ok := r.BasicAuth()
-		if !ok || user != "admin" || supplied != adminPassword {
-			w.Header().Set("WWW-Authenticate", "Basic realm=\"ServeIt admin\"")
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		if !authenticateRequest(w, r, adminPassword, `Basic realm="ServeIt admin"`) {
 			return
 		}
 		next(w, r)
@@ -265,9 +271,9 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := AdminPageData{CurrentPath: displaySharePath(rel), CurrentRel: rel, Entries: entries, Parents: adminBreadcrumbs(rel), ThemeSwitchURL: themeSwitchURL(r), ThemeOptions: themeOptions(r)}
+	data := AdminPageData{CurrentPath: displaySharePath(rel), CurrentRel: rel, Entries: entries, Parents: adminBreadcrumbs(rel), ThemeSwitchURL: themeSwitchURL(r), ThemeOptions: themeOptions(r), CSPNonce: requestCSPNonce(r)}
 	if err := templatesForRequest(r).admin.Execute(w, data); err != nil {
-		fmt.Printf("admin template error: %v\n", err)
+		log.Printf("admin template error: %v", err)
 	}
 }
 
@@ -297,12 +303,12 @@ func sharesCollectionHandler(w http.ResponseWriter, r *http.Request) {
 			writeShareError(w, http.StatusBadRequest, "Invalid request body")
 			return
 		}
-		if request.IdleTimeoutMinutes < 1 || request.IdleTimeoutMinutes > 1440 {
-			writeShareError(w, http.StatusBadRequest, "Idle timeout must be between 1 and 1440 minutes")
+		if request.IdleTimeoutMinutes < 1 || request.IdleTimeoutMinutes > maxShareTimeoutMinutes {
+			writeShareError(w, http.StatusBadRequest, fmt.Sprintf("Idle timeout must be between 1 and %d minutes", maxShareTimeoutMinutes))
 			return
 		}
-		if request.MaxLifetimeMinutes < request.IdleTimeoutMinutes || request.MaxLifetimeMinutes > 1440 {
-			writeShareError(w, http.StatusBadRequest, "Maximum lifetime must be at least the idle timeout and no more than 1440 minutes")
+		if request.MaxLifetimeMinutes < request.IdleTimeoutMinutes || request.MaxLifetimeMinutes > maxShareTimeoutMinutes {
+			writeShareError(w, http.StatusBadRequest, fmt.Sprintf("Maximum lifetime must be at least the idle timeout and no more than %d minutes", maxShareTimeoutMinutes))
 			return
 		}
 		items, err := normalizeShareItems(request.Items)
@@ -323,6 +329,10 @@ func sharesCollectionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func shareItemHandler(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/qr") {
+		shareQRHandler(w, r)
+		return
+	}
 	if r.Method != http.MethodDelete {
 		w.Header().Set("Allow", "DELETE")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -346,6 +356,33 @@ func shareItemHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func shareQRHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := strings.Trim(strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/admin/shares/"), "/qr"), "/")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	for _, item := range shareStore.Snapshot() {
+		if item.ID != id {
+			continue
+		}
+		shareURL := requestBaseURL(r) + "/s/" + item.Token + "/"
+		png, err := qrcode.Encode(shareURL, qrcode.Medium, 256)
+		if err != nil {
+			writeShareError(w, http.StatusInternalServerError, "Could not generate QR code")
+			return
+		}
+		writeShareJSON(w, http.StatusOK, map[string]string{"QRDataURL": "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)})
+		return
+	}
+	http.NotFound(w, r)
 }
 
 func shareHandler(w http.ResponseWriter, r *http.Request) {
@@ -388,7 +425,13 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !info.IsDir() {
-			if _, err := shareStore.Use(token, rel, true); err != nil {
+			countDownload := r.Method == http.MethodGet && r.Header.Get("Range") == ""
+			if countDownload {
+				if _, err := shareStore.Use(token, rel, true); err != nil {
+					serveShareError(w, err)
+					return
+				}
+			} else if _, err := shareStore.Use(token, rel, false); err != nil {
 				serveShareError(w, err)
 				return
 			}
@@ -418,9 +461,9 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	remaining, hardRemaining := shareRemainingSeconds(shared, time.Now())
-	data := SharedPageData{Token: token, CurrentPath: sharedDisplayPath(rel), Entries: entries, Parents: sharedBreadcrumbs(&shared, rel), ExpiresAt: shared.ExpiresAt, HardExpiresAt: shared.HardExpiresAt, IdleTimeoutMinutes: shared.IdleTimeoutMinutes, RemainingSeconds: remaining, HardRemainingSeconds: hardRemaining, ThemeSwitchURL: themeSwitchURL(r), ThemeOptions: themeOptions(r)}
+	data := SharedPageData{Token: token, CurrentPath: sharedDisplayPath(rel), Entries: entries, Parents: sharedBreadcrumbs(&shared, rel), ExpiresAt: shared.ExpiresAt, HardExpiresAt: shared.HardExpiresAt, IdleTimeoutMinutes: shared.IdleTimeoutMinutes, RemainingSeconds: remaining, HardRemainingSeconds: hardRemaining, ThemeSwitchURL: themeSwitchURL(r), ThemeOptions: themeOptions(r), CSPNonce: requestCSPNonce(r)}
 	if err := templatesForRequest(r).share.Execute(w, data); err != nil {
-		fmt.Printf("share template error: %v\n", err)
+		log.Printf("share template error: %v", err)
 	}
 }
 
@@ -443,8 +486,8 @@ func normalizeShareItems(paths []string) ([]ShareItem, error) {
 	if len(paths) == 0 {
 		return nil, errors.New("select at least one file or folder")
 	}
-	if len(paths) > 500 {
-		return nil, errors.New("a share can contain at most 500 selected items")
+	if len(paths) > maxShareItems {
+		return nil, fmt.Errorf("a share can contain at most %d selected items", maxShareItems)
 	}
 	seen := make(map[string]bool)
 	items := make([]ShareItem, 0, len(paths))
@@ -811,11 +854,7 @@ func makeAdminView(r *http.Request, item Share) ShareAdminView {
 		remaining = 0
 	}
 	shareURL := requestBaseURL(r) + "/s/" + item.Token + "/"
-	qrDataURL := ""
-	if png, err := qrcode.Encode(shareURL, qrcode.Medium, 256); err == nil {
-		qrDataURL = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
-	}
-	return ShareAdminView{ID: item.ID, URL: shareURL, QRDataURL: qrDataURL, Items: item.Items, CreatedAt: item.CreatedAt, LastActivityAt: item.LastActivityAt, ExpiresAt: item.ExpiresAt, HardExpiresAt: item.HardExpiresAt, IdleTimeoutMinutes: item.IdleTimeoutMinutes, MaxLifetimeMinutes: item.MaxLifetimeMinutes, PageViews: item.PageViews, Downloads: item.Downloads, Status: status, RemainingSeconds: int64(remaining.Seconds())}
+	return ShareAdminView{ID: item.ID, URL: shareURL, Items: item.Items, CreatedAt: item.CreatedAt, LastActivityAt: item.LastActivityAt, ExpiresAt: item.ExpiresAt, HardExpiresAt: item.HardExpiresAt, IdleTimeoutMinutes: item.IdleTimeoutMinutes, MaxLifetimeMinutes: item.MaxLifetimeMinutes, PageViews: item.PageViews, Downloads: item.Downloads, Status: status, RemainingSeconds: int64(remaining.Seconds())}
 }
 
 func requestBaseURL(r *http.Request) string {

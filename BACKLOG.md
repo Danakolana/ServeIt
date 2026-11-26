@@ -121,66 +121,66 @@ The state file is written inside the served root. Existing shares loaded from a 
 
 ## 10. Harden authentication and HTTP trust boundaries
 
-**Status: pending. Priority: high.**
+**Status: security baseline implemented; CSP and broader test coverage remain. Priority: high.**
 
 The browser password becomes the admin password when `--admin-password` is omitted, secrets can only be supplied on the command line, comparisons are ordinary string comparisons, and failed authentication has no rate limit. The API also trusts `X-Forwarded-Proto` from any client and accepts an admin JSON body regardless of Content-Type.
 
-- Always generate a separate admin password unless the owner explicitly supplies one. Do not reuse the browser password implicitly.
-- Support `SERVEIT_PASSWORD`, `SERVEIT_ADMIN_PASSWORD`, and restrictive password-file options. Define and test precedence without printing supplied secrets outside the existing startup credential panel.
-- Compare credentials in constant time and add bounded per-client authentication rate limiting for the browser and admin doors. Avoid global sleeps that let one client stall everyone else.
+- Always generate a separate admin password unless the owner explicitly supplies one. Do not reuse the browser password implicitly. **Implemented.**
+- Support `SERVEIT_PASSWORD`, `SERVEIT_ADMIN_PASSWORD`, and restrictive password-file options. Define and test precedence without printing supplied secrets outside the existing startup credential panel. **Implemented.**
+- Compare credentials in constant time and add bounded per-client authentication rate limiting for the browser and admin doors. Avoid global sleeps that let one client stall everyone else. **Implemented.**
 - Require `application/json` for admin JSON mutations. Add Origin checks for authenticated state-changing browser requests where applicable.
 - Ignore forwarded scheme and host headers by default. Honor them only behind an explicitly configured trusted proxy, then validate their syntax before generating share URLs.
-- Add a Content Security Policy. Use per-response nonces for the existing embedded scripts/styles or move them to dedicated embedded asset routes; do not weaken the policy with unrestricted inline script execution.
+- Add a Content Security Policy. Use per-response nonces for the existing embedded scripts/styles or move them to dedicated embedded asset routes; do not weaken the policy with unrestricted inline script execution. **Implemented for embedded scripts with per-response nonces.**
 - Add authentication, rate-limit, Content-Type, proxy-spoofing, and CSP tests.
 
 ## 11. Correct share activity, countdowns, and admin polling cost
 
-**Status: pending. Priority: medium.**
+**Status: download counting and lazy QR generation implemented; broader activity tests remain. Priority: medium.**
 
 HEAD requests and every Range request for a shared file currently increment the download counter and rewrite state. The guest and admin countdowns subtract server timestamps from `Date.now()`, so a device with a bad clock can show a valid link as expired. Every 15-second admin poll also regenerates a PNG QR code for every share.
 
-- Define a download as an initial successful GET. Do not count HEAD requests, and prevent video seeking or resume ranges from inflating the counter. Document the chosen resume behavior and test it with multiple Range requests.
+- Define a download as an initial successful GET. Do not count HEAD requests, and prevent video seeking or resume ranges from inflating the counter. Document the chosen resume behavior and test it with multiple Range requests. **Implemented for HEAD and Range requests.**
 - Send server-derived remaining seconds to both pages. Decrement from that baseline with a monotonic browser timer; refresh the baseline after server activity instead of depending on the wall clock of the phone or computer.
-- Remove QR image generation from the share-list response. Generate or cache a QR only when the user opens its modal, using a small authenticated endpoint.
+- Remove QR image generation from the share-list response. Generate or cache a QR only when the user opens its modal, using a small authenticated endpoint. **Implemented.**
 - Document that revocation blocks new requests but does not recall bytes already sent on an established transfer. Do not add per-chunk store locking merely to terminate active transfers.
 - Keep the 15-second list refresh lightweight and add tests for counters, Range/HEAD behavior, remaining-time serialization, and lazy QR generation.
 
 ## 12. Make releases reproducible, least-privileged, and installable with Go
 
-**Status: pending. Priority: high before the next release.**
+**Status: release workflow hardened; install and publishing verification remain. Priority: high before the next release.**
 
 The module path now matches the GitHub repository. The release workflow still needs hardening: it publishes without first running tests or vet, grants `contents: write` to build jobs, interpolates the manual tag input directly into shell source, and references actions by mutable major-version tags.
 
 - Verify `go install github.com/Danakolana/ServeIt@<new-tag>` in a clean environment.
-- Add a verification job that runs `go test ./...`, `go vet ./...`, and the supported cross-build matrix before publishing. The release job must depend on it.
-- Give the workflow read-only permissions by default and grant `contents: write` only to the publishing job.
-- Pass manual inputs through environment variables, validate release tags against the intended version format, and ensure a manual release builds the commit identified by that tag.
-- Pin third-party actions to reviewed full commit SHAs with version comments. Include checkout, Go setup, artifact upload/download, and release publishing actions.
+- Add a verification job that runs `go test ./...`, `go vet ./...`, and the supported cross-build matrix before publishing. The release job must depend on it. **Test and vet verification implemented; cross-build verification remains in the build matrix.**
+- Give the workflow read-only permissions by default and grant `contents: write` only to the publishing job. **Implemented.**
+- Pass manual inputs through environment variables, validate release tags against the intended version format, and ensure a manual release builds the commit identified by that tag. **Implemented.**
+- Pin third-party actions to reviewed full commit SHAs with version comments. Include checkout, Go setup, artifact upload/download, and release publishing actions. **Implemented.**
 - Test the workflow with a non-publishing pull-request or local workflow check, then publish the next patch release and verify all binaries plus `SHA256SUMS`.
 
 ## 13. Reduce filesystem work on large shares and searches
 
-**Status: pending. Priority: medium; benchmark each optimization.**
+**Status: search cancellation and pooled ZIP buffering implemented; share authorization refactor remains. Priority: medium; benchmark each optimization.**
 
 Path safety currently calls `EvalSymlinks` for ordinary entries repeatedly: listing resolves every entry, share authorization resolves both sides on each check, and ZIP walking can resolve and reauthorize the same descendant several times. `Use` performs filesystem authorization and a state-file rewrite while holding the global store mutex. Abandoned searches continue walking, and ZIP streaming uses the default 32 KiB copy buffer.
 
 - Resolve the served root and selected share roots once. Use `Lstat`/`DirEntry.Type` to take the fast path for ordinary descendants, resolving actual symlinks before allowing them. Preserve the invariant that a symlink cannot escape the served root or its selected share root.
 - Remove filesystem calls and persistence I/O from the share-store critical section. Copy the immutable authorization data under lock, validate outside it, then reacquire and recheck revocation/expiry before recording activity.
-- Check `r.Context()` during search walking and stop promptly when the client disconnects or starts a replacement search.
-- Benchmark a reusable 256 KiB to 1 MiB ZIP copy buffer against the existing 32 KiB behavior for one large file and thousands of small files. Retain it only if throughput improves without material memory growth.
+- Check `r.Context()` during search walking and stop promptly when the client disconnects or starts a replacement search. **Implemented.**
+- Benchmark a reusable 256 KiB to 1 MiB ZIP copy buffer against the existing 32 KiB behavior for one large file and thousands of small files. Retain it only if throughput improves without material memory growth. **Implemented with a pooled 256 KiB buffer; benchmark coverage remains.**
 - Extend the performance probe to report path-resolution calls, concurrent share latency, cancellation delay, allocations, first-byte time, and throughput. Include a real two-device LAN run.
 
 ## 14. Introduce a server object and focused security tests
 
-**Status: pending. Priority: medium after tasks 7–13.**
+**Status: named limits and logger consistency improved; Server refactor remains. Priority: medium after tasks 7–13.**
 
 Process-wide roots, passwords, templates, and the share store make tests mutate global state and prevent safe parallel execution. Main/share JavaScript and CSS also duplicate download and listing behavior, increasing the chance that a security or correctness fix reaches only one page.
 
 - Move configuration, canonical root, templates, authentication, and share storage into a `Server` type with methods for handlers. Keep `main` responsible only for flags, construction, startup output, signals, and serving.
 - Parse all templates through one constructor and expose shared embedded CSS/JavaScript from dedicated routes or template components with one implementation of sorting and multi-download behavior.
 - Add table-driven tests for `cleanShareRel`, URL construction, authorization, case variants, backslashes, traversal, symlink boundaries, hidden paths, and state-file aliases. Run independent server instances in parallel where useful.
-- Replace mixed `fmt.Printf`/`log.Printf` handler diagnostics with one injected logger. Preserve concise user-facing startup output.
-- Move user-visible limits such as search results, selected items, ZIP entries, and maximum lifetime into clearly named constants. Keep related validation messages and boundary tests tied to those constants.
+- Replace mixed `fmt.Printf`/`log.Printf` handler diagnostics with one injected logger. Preserve concise user-facing startup output. **Touched handler diagnostics now use `log.Printf`.**
+- Move user-visible limits such as search results, selected items, ZIP entries, and maximum lifetime into clearly named constants. Keep related validation messages and boundary tests tied to those constants. **Share limits are now named constants.**
 - Treat variable shadowing, `utf8.RuneCountInString`, and terminal-width library choices as cleanup within touched code, not reasons for a standalone refactor.
 
 ## 15. Shut down gracefully without cutting off active downloads

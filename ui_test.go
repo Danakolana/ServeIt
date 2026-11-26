@@ -22,6 +22,90 @@ func TestPathEscapePreservesSegments(t *testing.T) {
 	}
 }
 
+func TestConfiguredSecretsAndConstantTimeAuth(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "password")
+	if err := os.WriteFile(file, []byte("from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SERVEIT_PASSWORD", "from-env")
+	if got, err := configuredSecret("from-flag", file, "SERVEIT_PASSWORD"); err != nil || got != "from-flag" {
+		t.Fatalf("flag secret = %q, err=%v", got, err)
+	}
+	if got, err := configuredSecret("", file, "SERVEIT_PASSWORD"); err != nil || got != "from-file" {
+		t.Fatalf("file secret = %q, err=%v", got, err)
+	}
+	if got, err := configuredSecret("", "", "SERVEIT_PASSWORD"); err != nil || got != "from-env" {
+		t.Fatalf("environment secret = %q, err=%v", got, err)
+	}
+	if !constantTimeEqual("secret", "secret") || constantTimeEqual("secret", "other") {
+		t.Fatal("constant-time secret comparison returned the wrong result")
+	}
+	limited := newAuthLimiter()
+	now := time.Unix(1_700_000_000, 0)
+	for i := 0; i < authFailureLimit; i++ {
+		if !limited.allow("client", now) {
+			t.Fatalf("attempt %d was blocked too early", i)
+		}
+	}
+	if limited.allow("client", now) {
+		t.Fatal("authentication limiter did not block the next attempt")
+	}
+}
+
+func TestAdminPasswordIsNotImplicitlyBrowserPassword(t *testing.T) {
+	dir := t.TempDir()
+	previousRoot, previousResolved := root, resolvedRoot
+	previousPassword, previousAdmin := password, adminPassword
+	previousGenerated, previousStore := adminPasswordGenerated, shareStore
+	previousState := stateFileOverride
+	root, resolvedRoot, password = dir, dir, "browser-secret"
+	stateFileOverride = filepath.Join(dir, "state.json")
+	t.Cleanup(func() {
+		root, resolvedRoot = previousRoot, previousResolved
+		password, adminPassword = previousPassword, previousAdmin
+		adminPasswordGenerated, shareStore = previousGenerated, previousStore
+		stateFileOverride = previousState
+	})
+	adminPasswordGenerated = false
+	if err := initSharing(""); err != nil {
+		t.Fatal(err)
+	}
+	if adminPassword == password || !adminPasswordGenerated {
+		t.Fatalf("generated admin password = %q, browser password = %q, generated=%v", adminPassword, password, adminPasswordGenerated)
+	}
+}
+
+func TestSecurityHeadersUsePerResponseNonce(t *testing.T) {
+	handler := securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requestCSPNonce(r) == "" {
+			t.Error("CSP nonce missing from request context")
+		}
+	}))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	policy := recorder.Header().Get("Content-Security-Policy")
+	if !strings.Contains(policy, "script-src 'self' 'nonce-") || strings.Contains(policy, "script-src 'self' 'unsafe-inline'") {
+		t.Fatalf("unexpected CSP policy: %q", policy)
+	}
+}
+
+func TestAdminViewsGenerateQROnlyOnDemand(t *testing.T) {
+	previousBase, previousStore := publicBaseURL, shareStore
+	publicBaseURL = "http://192.168.1.20:8080"
+	shareStore = &ShareStore{shares: []*Share{{ID: "share-id", Token: "token"}}}
+	t.Cleanup(func() { publicBaseURL, shareStore = previousBase, previousStore })
+	view := makeAdminView(httptest.NewRequest(http.MethodGet, "/api/admin/shares", nil), *shareStore.shares[0])
+	if view.QRDataURL != "" {
+		t.Fatal("admin list view eagerly generated a QR code")
+	}
+	recorder := httptest.NewRecorder()
+	shareQRHandler(recorder, httptest.NewRequest(http.MethodGet, "/api/admin/shares/share-id/qr", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"QRDataURL":"data:image/png;base64,`) {
+		t.Fatalf("QR response = %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestAllUITemplateSetsParseAndRender(t *testing.T) {
 	if err := initTemplates(); err != nil {
 		t.Fatal(err)

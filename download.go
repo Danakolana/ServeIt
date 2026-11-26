@@ -11,13 +11,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const (
 	maxDownloadSelections = 5000
 	maxZipEntries         = 100000
 	maxDownloadBytes      = int64(10 << 30)
+	zipCopyBufferSize     = 256 << 10
 )
+
+var zipCopyBuffers = sync.Pool{New: func() any {
+	buffer := make([]byte, zipCopyBufferSize)
+	return &buffer
+}}
 
 type zipEntry struct {
 	abs  string
@@ -228,9 +235,12 @@ func streamStoredZip(w http.ResponseWriter, entries []zipEntry) (bool, error) {
 			file.Close()
 			return started, err
 		}
-		if _, err := io.Copy(part, file); err != nil {
+		buffer := zipCopyBuffers.Get().(*[]byte)
+		_, copyErr := io.CopyBuffer(part, file, *buffer)
+		zipCopyBuffers.Put(buffer)
+		if copyErr != nil {
 			file.Close()
-			return started, err
+			return started, copyErr
 		}
 		file.Close()
 	}

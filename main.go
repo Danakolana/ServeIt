@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -15,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -40,6 +43,7 @@ type PageData struct {
 	Query          string
 	ThemeSwitchURL string
 	ThemeOptions   []ThemeOption
+	CSPNonce       string
 }
 
 type Crumb struct {
@@ -57,18 +61,65 @@ type SearchResult struct {
 const (
 	maxSearchResults      = 200
 	maxConcurrentSearches = 4
+	authFailureWindow     = time.Minute
+	authFailureLimit      = 10
+	authBlockDuration     = 30 * time.Second
 )
 
 // ─── globals ─────────────────────────────────────────────────────────────────
 
 var (
-	root          string
-	password      string
-	showHidden    bool
-	allowedHosts  map[string]struct{}
-	serverAddress string
-	searchSlots   = make(chan struct{}, maxConcurrentSearches)
+	root             string
+	password         string
+	showHidden       bool
+	allowedHosts     map[string]struct{}
+	serverAddress    string
+	searchSlots      = make(chan struct{}, maxConcurrentSearches)
+	authLimiterStore = newAuthLimiter()
 )
+
+type authLimiter struct {
+	mu      sync.Mutex
+	clients map[string]authAttempt
+}
+
+type authAttempt struct {
+	started time.Time
+	count   int
+	blocked time.Time
+}
+
+func newAuthLimiter() *authLimiter { return &authLimiter{clients: make(map[string]authAttempt)} }
+
+func (l *authLimiter) allow(key string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	attempt := l.clients[key]
+	if now.Before(attempt.blocked) {
+		return false
+	}
+	if attempt.started.IsZero() || now.Sub(attempt.started) >= authFailureWindow {
+		attempt = authAttempt{started: now}
+	}
+	attempt.count++
+	if attempt.count > authFailureLimit {
+		attempt.blocked = now.Add(authBlockDuration)
+	}
+	l.clients[key] = attempt
+	return attempt.blocked.IsZero()
+}
+
+func (l *authLimiter) success(key string) {
+	l.mu.Lock()
+	delete(l.clients, key)
+	l.mu.Unlock()
+}
+
+func constantTimeEqual(left, right string) bool {
+	a := sha256.Sum256([]byte(left))
+	b := sha256.Sum256([]byte(right))
+	return subtle.ConstantTimeCompare(a[:], b[:]) == 1
+}
 
 type stringListFlag []string
 
@@ -84,7 +135,9 @@ func (f *stringListFlag) Set(value string) error {
 func main() {
 	port := flag.String("port", "8080", "port to listen on")
 	pass := flag.String("password", "", "basic-auth password (username is always 'admin'); leave empty to disable auth")
-	adminPass := flag.String("admin-password", "", "super-admin password (username is always 'admin'); generated when omitted")
+	passwordFile := flag.String("password-file", "", "read the browser password from a restrictive file")
+	adminPass := flag.String("admin-password", "", "separate admin password (generated when omitted)")
+	adminPasswordFile := flag.String("admin-password-file", "", "read the admin password from a restrictive file")
 	publicURLFlag := flag.String("public-url", "", "canonical http(s) origin used in guest links and QR codes")
 	listenAddressFlag := flag.String("listen", "0.0.0.0", "IP address to listen on")
 	stateFileFlag := flag.String("state-file", "", "path for persistent share state (defaults to a per-user ServeIt state file)")
@@ -99,7 +152,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("cannot resolve directory: %v", err)
 	}
-	password = *pass
+	password, err = configuredSecret(*pass, *passwordFile, "SERVEIT_PASSWORD")
+	if err != nil {
+		log.Fatalf("cannot read browser password: %v", err)
+	}
 	showHidden = *showHiddenFlag
 	serverPort = *port
 	stateFileOverride = strings.TrimSpace(*stateFileFlag)
@@ -123,7 +179,11 @@ func main() {
 			allowedHosts[canonicalHost(parsed.Host)] = struct{}{}
 		}
 	}
-	if err := initSharing(*adminPass); err != nil {
+	adminSecret, err := configuredSecret(*adminPass, *adminPasswordFile, "SERVEIT_ADMIN_PASSWORD")
+	if err != nil {
+		log.Fatalf("cannot read admin password: %v", err)
+	}
+	if err := initSharing(adminSecret); err != nil {
 		log.Fatalf("cannot initialize sharing: %v", err)
 	}
 
@@ -163,15 +223,53 @@ func main() {
 func withAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if password != "" {
-			user, pass, ok := r.BasicAuth()
-			if !ok || user != "admin" || pass != password {
-				w.Header().Set("WWW-Authenticate", `Basic realm="ServeIt"`)
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			if !authenticateRequest(w, r, password, `Basic realm="ServeIt"`) {
 				return
 			}
 		}
 		next(w, r)
 	}
+}
+
+func authenticateRequest(w http.ResponseWriter, r *http.Request, expected, challenge string) bool {
+	key := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(key); err == nil {
+		key = host
+	}
+	if !authLimiterStore.allow(key, time.Now()) {
+		w.Header().Set("Retry-After", "30")
+		http.Error(w, "Too many authentication attempts", http.StatusTooManyRequests)
+		return false
+	}
+	user, supplied, ok := r.BasicAuth()
+	if !ok || user != "admin" || !constantTimeEqual(supplied, expected) {
+		w.Header().Set("WWW-Authenticate", challenge)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	authLimiterStore.success(key)
+	return true
+}
+
+func configuredSecret(flagValue, filePath, envName string) (string, error) {
+	if strings.TrimSpace(flagValue) != "" {
+		return flagValue, nil
+	}
+	if strings.TrimSpace(filePath) != "" {
+		info, err := os.Stat(filePath)
+		if err != nil {
+			return "", err
+		}
+		if info.Mode().Perm()&0o077 != 0 {
+			return "", fmt.Errorf("password file %s is accessible by other users", filePath)
+		}
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimRight(string(data), "\r\n"), nil
+	}
+	return os.Getenv(envName), nil
 }
 
 func hostValidation(next http.Handler) http.Handler {
@@ -301,6 +399,7 @@ func browseHandler(w http.ResponseWriter, r *http.Request) {
 		Parents:        breadcrumbs(rel),
 		ThemeSwitchURL: themeSwitchURL(r),
 		ThemeOptions:   themeOptions(r),
+		CSPNonce:       requestCSPNonce(r),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -450,6 +549,13 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(results)
+}
+
+func requestCSPNonce(r *http.Request) string {
+	if value, ok := r.Context().Value(cspNonceKey{}).(string); ok {
+		return value
+	}
+	return ""
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

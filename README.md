@@ -105,11 +105,15 @@ On Windows, use `ServeIt.exe`; the flags are the same.
 | `--port` | `8080` | TCP port. |
 | `--listen` | `0.0.0.0` | IP address to bind. Use `127.0.0.1` for local-only access or `::` for an IPv6 listener. |
 | `--password` | empty | Basic-auth password for the main browser and search. The username is `admin`. Empty means open access on the LAN. |
-| `--admin-password` | see description | Password for `/admin`, with username `admin`. If omitted, ServeIt reuses `--password`; if both are empty, it generates and prints a random password. |
+| `--password-file` | empty | Read the main-browser password from a file whose permissions do not allow group or other access. |
+| `--admin-password` | generated | Separate password for `/admin`, with username `admin`. If omitted, ServeIt generates and prints a random password. |
+| `--admin-password-file` | empty | Read the admin password from a restrictive file. |
 | `--public-url` | auto-detected LAN URL | Canonical `http://` or `https://` origin used in guest links and QR codes. Set this when ServeIt is behind a reverse proxy. |
 | `--allow-host` | local names and addresses | Additional Host name or IP accepted by the server. Repeat the flag for multiple names. |
 | `--state-file` | per-user ServeIt state path | Store share metadata outside the served directory. Relative paths are resolved from the current working directory. `SERVEIT_STATE_FILE` provides the same setting. |
 | `--show-hidden` | false | Include path segments beginning with `.` in browsing, search, shares, and downloads. |
+
+The equivalent environment variables are `SERVEIT_PASSWORD` and `SERVEIT_ADMIN_PASSWORD`. A flag value takes precedence over its password file, which takes precedence over the environment variable. Password files must be readable only by the current user.
 
 Startup QR codes prefer `192.168.x.x` addresses and may include private IPv6 addresses such as `fd00::/8`. Docker, VM, link-local, and other interface ranges are skipped to reduce the chance of scanning an unusable address. If no usable LAN address exists, ServeIt displays a loopback address for local access. Guest-link QR codes use `--public-url` when it is configured.
 
@@ -153,7 +157,9 @@ ServeIt is intended for a trusted local network. It is not hardened for direct e
 - **HTTP is unencrypted.** Basic authentication controls access but does not encrypt passwords, share URLs, or files in transit. Use an HTTPS reverse proxy or tunnel if the network is not trusted.
 - **The main browser exposes the whole configured root.** With no `--password`, anyone who can reach the server can browse and download it. Hidden path segments are excluded by default; use `--show-hidden` only when that is intentional.
 - **Guest links are the isolation boundary.** A guest can access only the files and folder descendants selected when the link was created. Anyone who obtains the URL can use it until it expires or is revoked.
-- **Admin credentials matter.** If `--admin-password` is omitted while `--password` is set, the same password protects both areas. Pass a separate admin password when the main-browser password is shared with other people.
+- **Admin credentials matter.** ServeIt generates a separate admin password unless `--admin-password`, `--admin-password-file`, or `SERVEIT_ADMIN_PASSWORD` supplies one. The main-browser password never implicitly grants admin access.
+- **Browser scripts use a restrictive CSP.** Embedded classic scripts receive a per-response nonce; external theme scripts are limited to same-origin assets.
+- **Revocation affects new requests.** A transfer that has already started may finish sending bytes; revoking the link blocks subsequent requests.
 - **Admin mutations use same-origin request checks.** Share creation and revocation require the admin request header and JSON content type, and reject a mismatched `Origin` when one is supplied.
 - **Share state is reserved.** Temporary-link metadata is stored in a per-user ServeIt state file outside the served root by default. Use `--state-file` or `SERVEIT_STATE_FILE` to choose a location. Existing `.serveit-shares.json` and `.lanserve-shares.json` files under the served root are migrated on first use, while aliases to the active state file remain hidden from browsing, search, guest links, and ZIP downloads. Corrupt state is quarantined with a timestamped backup instead of being overwritten.
 
@@ -169,7 +175,7 @@ Security-default improvements are tracked in the [roadmap](BACKLOG.md). If you d
 
 ### The expected QR code is missing
 
-ServeIt intentionally prints QR codes only for `192.168.0.0/16`. Addresses belonging to Docker, virtual machines, link-local interfaces, and other ranges are skipped. On networks using another private range, type the usable address manually; broader address discovery is on the roadmap.
+ServeIt prefers `192.168.0.0/16` and private IPv6 addresses for startup QR codes. Addresses belonging to Docker, virtual machines, link-local interfaces, and other ranges are skipped. If no usable LAN address is found, type the reachable address manually.
 
 ### macOS blocks the binary
 
