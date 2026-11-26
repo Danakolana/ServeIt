@@ -12,9 +12,10 @@ let tt;
 function toast(m,bad){let e=$('#toast');if(!e){e=document.createElement('div');e.id='toast';e.setAttribute('role','status');document.body.append(e)}
  e.textContent=m;e.className=(m?'on ':'')+(bad?'bad':'');clearTimeout(tt);if(m&&!/…$/.test(m))tt=setTimeout(()=>e.className='',4000)}
 async function copy(s){
+ if(!s)throw new Error('Copy failed');
  if(navigator.clipboard&&window.isSecureContext){try{await navigator.clipboard.writeText(s);return}catch{}}
- const a=document.createElement('textarea');a.value=s;a.setAttribute('readonly','');a.style.cssText='position:fixed;top:0;left:0;opacity:0;pointer-events:none';document.body.append(a);a.focus();a.select();a.setSelectionRange(0,s.length);
- let ok=false;try{ok=document.execCommand('copy')}catch{}a.remove();if(!ok)throw new Error('Copy failed')
+ const previous=document.activeElement,a=document.createElement('textarea');a.value=s;a.setAttribute('readonly','');a.setAttribute('aria-hidden','true');a.style.cssText='position:fixed;top:0;left:-9999px;width:1px;height:1px;opacity:.01;pointer-events:none';document.body.append(a);a.focus();a.select();a.setSelectionRange(0,s.length);
+ let ok=false;try{ok=document.execCommand('copy')}catch{}a.remove();if(previous&&typeof previous.focus==='function')previous.focus();if(!ok)throw new Error('Copy failed')
 }
 async function zip(url,paths,st){
  st('Preparing…');

@@ -232,13 +232,17 @@ function copyText(text) {
 }
 function fallbackCopy(text) {
   return new Promise(function(resolve, reject){
+    var previous = document.activeElement;
     var area = document.createElement('textarea');
     area.value = text;
     area.setAttribute('readonly', '');
+    area.setAttribute('aria-hidden', 'true');
     area.style.position = 'fixed';
     area.style.top = '0';
-    area.style.left = '0';
-    area.style.opacity = '0';
+    area.style.left = '-9999px';
+    area.style.width = '1px';
+    area.style.height = '1px';
+    area.style.opacity = '0.01';
     document.body.appendChild(area);
     area.focus();
     area.select();
@@ -246,15 +250,27 @@ function fallbackCopy(text) {
     var ok = false;
     try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
     document.body.removeChild(area);
+    if (previous && typeof previous.focus === 'function') previous.focus();
     if (ok) resolve(); else reject(new Error('Copy failed'));
   });
 }
-function openQR(item) {
+async function openQR(item) {
   modalURL = item.URL;
-  document.getElementById('qr-image').src = item.QRDataURL;
+  var image = document.getElementById('qr-image');
+  image.removeAttribute('src');
+  image.alt = 'Loading share link QR code';
   document.getElementById('modal-url').textContent = item.URL;
   document.getElementById('copy-modal').textContent = 'Copy link';
   document.getElementById('qr-modal').classList.add('open');
+  try {
+    var response = await fetch(apiBase + '/api/admin/shares/' + encodeURIComponent(item.ID) + '/qr');
+    var result = await response.json();
+    if (!response.ok || !result.QRDataURL) throw new Error('Could not generate QR code');
+    image.src = result.QRDataURL;
+    image.alt = 'Share link QR code';
+  } catch (_) {
+    image.alt = 'QR code unavailable';
+  }
 }
 document.getElementById('close-modal').addEventListener('click', function(){ document.getElementById('qr-modal').classList.remove('open'); });
 document.getElementById('copy-modal').addEventListener('click', async function(){

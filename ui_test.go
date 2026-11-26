@@ -308,6 +308,32 @@ func TestSharedTemplatesRenderServerCountdownBaseline(t *testing.T) {
 	}
 }
 
+func TestClassicThemeUsesLazyQRAndWorkingGuestDownloadTimer(t *testing.T) {
+	adminTemplate, err := os.ReadFile("admin.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminSource := string(adminTemplate)
+	if !strings.Contains(adminSource, "/api/admin/shares/' + encodeURIComponent(item.ID) + '/qr") {
+		t.Fatal("classic admin does not fetch lazy QR data")
+	}
+	if strings.Contains(adminSource, "item.QRDataURL") {
+		t.Fatal("classic admin still assumes QRDataURL is present in the share list")
+	}
+
+	shareTemplate, err := os.ReadFile("share.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shareSource := string(shareTemplate)
+	if !strings.Contains(shareSource, "seconds = Math.min(idleMinutes * 60, hardSeconds)") {
+		t.Fatal("classic guest download does not refresh the idle countdown")
+	}
+	if strings.Contains(shareSource, "hardExpiry") || strings.Contains(shareSource, "expiry = Math.min") {
+		t.Fatal("classic guest download still references undefined expiry variables")
+	}
+}
+
 func TestCleanShareRelAndAuthorizationBoundaries(t *testing.T) {
 	for _, test := range []struct {
 		name       string

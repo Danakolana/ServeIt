@@ -179,7 +179,7 @@ function bindListing(table){
     updatePick();
   });
   button.addEventListener('click', function(){
-    expiry = Math.min(Date.now() + idleMinutes*60000, hardExpiry);
+    seconds = Math.min(idleMinutes * 60, hardSeconds);
     updateTimer();
     var paths = selected().map(function(item){ return item.value; });
     startZipDownload(button, status, endpoint, paths, updatePick, plannedSummary && JSON.stringify(paths) === plannedKey);
