@@ -73,3 +73,16 @@ dialog .acts{justify-content:center;margin:0}
 .foot a:hover{color:var(--acc)}
 @media(max-width:640px){.when{display:none}.wrap{padding-inline:14px}.top{flex-wrap:wrap}.search{order:3;flex-basis:100%;max-width:none;margin:0}.panel-head{padding:15px 16px}.panel-note{display:none}.panel-body{padding:15px 16px}.admin-file-list{margin:0 -16px -15px}.admin-file-list .list th,.admin-file-list .list td{padding-inline:14px}.shares-panel .panel-body{padding:10px}.share-top{align-items:flex-start;flex-direction:column}.share .acts{margin-inline-start:0;flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){.dock,#toast{transition:none}}
+
+/* Share cards use a distinct visual state so access is readable at a glance. */
+.share{--share-accent:#12805a;--share-tint:#e4f6ef;--share-surface:#f8fcfa;position:relative;padding:17px 17px 17px 20px;overflow:hidden;transition:border-color .18s,box-shadow .18s,transform .18s}
+.share::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--share-accent)}
+.share:hover{border-color:var(--share-accent);box-shadow:0 8px 22px rgba(25,34,65,.1);transform:translateY(-1px)}
+.share-expired{--share-accent:#a66b13;--share-tint:#fff2d8;--share-surface:#fffcf6}
+.share-revoked{--share-accent:#c54857;--share-tint:#ffe6e9;--share-surface:#fff9fa}
+.status-mark{width:8px;height:8px;border-radius:50%;background:var(--share-accent);box-shadow:0 0 0 4px var(--share-tint)}
+.badge{background:var(--share-tint);color:var(--share-accent);font-weight:750}
+.share-expired .badge,.share-revoked .badge{color:var(--share-accent)}
+.status-copy{color:var(--fg);font-weight:600}.metric{color:var(--mut)}
+.share-url{border-color:color-mix(in srgb,var(--share-accent) 28%,var(--line));background:var(--share-surface)}
+@media(prefers-color-scheme:dark){.share{--share-accent:#4cd7a2;--share-tint:#173d34;--share-surface:#111d1b}.share-expired{--share-accent:#e7b455;--share-tint:#44351d;--share-surface:#211c12}.share-revoked{--share-accent:#ff7d88;--share-tint:#45232a;--share-surface:#211418}}
