@@ -420,7 +420,7 @@ func isHiddenPath(rel string) bool {
 		return false
 	}
 	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
-		if part != "" && strings.HasPrefix(part, ".") {
+		if part != "" && part != "." && strings.HasPrefix(part, ".") {
 			return true
 		}
 	}

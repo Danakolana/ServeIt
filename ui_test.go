@@ -530,7 +530,7 @@ func TestHostValidationAndHiddenPathDefaults(t *testing.T) {
 			t.Errorf("hostAllowed(%q) = %v, want %v", test.value, got, test.want)
 		}
 	}
-	if !isHiddenPath(".env") || !isHiddenPath("project/.git/config") || isHiddenPath("project/readme.md") {
+	if !isHiddenPath(".env") || !isHiddenPath("project/.git/config") || isHiddenPath(".") || isHiddenPath("project/readme.md") {
 		t.Fatal("unexpected hidden path classification")
 	}
 	showHidden = true
@@ -571,6 +571,38 @@ func TestHiddenPathsAreExcludedAcrossAccessPaths(t *testing.T) {
 	searchHandler(recorder, httptest.NewRequest(http.MethodGet, "/search?q=env", nil))
 	if strings.Contains(recorder.Body.String(), ".env") {
 		t.Fatal("hidden file appeared in search results")
+	}
+}
+
+func TestSearchFindsVisibleFilesFromRoot(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "folder"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, contents := range map[string]string{
+		"folder/needle.txt": "visible",
+		".needle.txt":       "hidden",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	previousHidden := showHidden
+	showHidden = false
+	t.Cleanup(func() { showHidden = previousHidden })
+	restoreRoot(t, dir)
+
+	recorder := httptest.NewRecorder()
+	searchHandler(recorder, httptest.NewRequest(http.MethodGet, "/search?q=needle", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("search returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var results []SearchResult
+	if err := json.Unmarshal(recorder.Body.Bytes(), &results); err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].RelPath != "folder/needle.txt" {
+		t.Fatalf("search results = %+v, want only the visible nested file", results)
 	}
 }
 
