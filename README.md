@@ -1,4 +1,4 @@
-# ServeIt
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg"><img src="docs/logo.svg" alt="ServeIt" height="44"></picture></p>
 
 **A single-binary LAN file server with searchable browsing and expiring guest links for exactly the files and folders you select.**
 
@@ -10,6 +10,8 @@
 
 ServeIt turns a folder into a clean web interface for devices on the same network. Browse and search the full served folder, or create a temporary guest link containing only selected files and directories. There is no runtime, package manager, account system, or installation directory.
 
+The original Classic interface remains the default. Use the **Modern UI** link in the browser, admin page, or guest page to switch to the optional modern theme; ServeIt remembers the choice in that browser.
+
 ## Quick start
 
 ### Linux, 64-bit PC
@@ -17,7 +19,7 @@ ServeIt turns a folder into a clean web interface for devices on the same networ
 ```bash
 curl -fL -o ServeIt https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-linux-amd64
 chmod +x ServeIt
-./ServeIt --dir ~/Downloads
+./ServeIt
 ```
 
 ### macOS, Apple silicon
@@ -25,7 +27,7 @@ chmod +x ServeIt
 ```bash
 curl -fL -o ServeIt https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-macos-arm64
 chmod +x ServeIt
-./ServeIt --dir ~/Downloads
+./ServeIt
 ```
 
 Intel Mac users should replace `macos-arm64` with `macos-amd64`.
@@ -34,8 +36,10 @@ Intel Mac users should replace `macos-arm64` with `macos-amd64`.
 
 ```powershell
 Invoke-WebRequest -Uri "https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-windows-amd64.exe" -OutFile "ServeIt.exe"
-.\ServeIt.exe --dir "$HOME\Downloads"
+.\ServeIt.exe
 ```
+
+That is enough: running `./ServeIt` or `.\ServeIt.exe` with no arguments immediately serves the current folder. Use `--dir /another/path` only when you want to share a different folder.
 
 ServeIt prints the address, QR code, authentication state, and admin credentials when it starts. Open the address from another device on the same Wi-Fi or Ethernet network.
 

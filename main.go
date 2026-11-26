@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"html/template"
 	"io/fs"
 	"log"
 	"mime"
@@ -20,7 +19,7 @@ import (
 
 // ─── embedded HTML template ──────────────────────────────────────────────────
 
-//go:embed tmpl.html admin.html share.html
+//go:embed tmpl.html admin.html share.html themes/modern/*.html static
 var tmplFS embed.FS
 
 // ─── data types ──────────────────────────────────────────────────────────────
@@ -34,10 +33,11 @@ type Entry struct {
 }
 
 type PageData struct {
-	CurrentPath string
-	Entries     []Entry
-	Parents     []Crumb
-	Query       string
+	CurrentPath    string
+	Entries        []Entry
+	Parents        []Crumb
+	Query          string
+	ThemeSwitchURL string
 }
 
 type Crumb struct {
@@ -57,7 +57,6 @@ type SearchResult struct {
 var (
 	root     string
 	password string
-	tmpl     *template.Template
 )
 
 // ─── main ────────────────────────────────────────────────────────────────────
@@ -79,22 +78,14 @@ func main() {
 		log.Fatalf("cannot initialize sharing: %v", err)
 	}
 
-	// load embedded template
-	raw, err := tmplFS.ReadFile("tmpl.html")
-	if err != nil {
-		log.Fatalf("cannot read embedded template: %v", err)
-	}
-	tmpl = template.Must(template.New("page").Funcs(template.FuncMap{
-		"humanSize": humanSize,
-		"formatTime": func(t time.Time) string {
-			return t.Format("2006-01-02 15:04")
-		},
-	}).Parse(string(raw)))
-	if err := initShareTemplates(); err != nil {
-		log.Fatalf("cannot load sharing templates: %v", err)
+	if err := initTemplates(); err != nil {
+		log.Fatalf("cannot load UI templates: %v", err)
 	}
 
 	mux := http.NewServeMux()
+	if err := registerUIRoutes(mux); err != nil {
+		log.Fatalf("cannot load UI assets: %v", err)
+	}
 	mux.HandleFunc("/s/", shareHandler)
 	mux.HandleFunc("/admin", withAdminAuth(adminHandler))
 	mux.HandleFunc("/admin/", withAdminAuth(adminHandler))
@@ -169,13 +160,14 @@ func browseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := PageData{
-		CurrentPath: "/" + filepath.ToSlash(rel),
-		Entries:     entries,
-		Parents:     breadcrumbs(rel),
+		CurrentPath:    "/" + filepath.ToSlash(rel),
+		Entries:        entries,
+		Parents:        breadcrumbs(rel),
+		ThemeSwitchURL: themeSwitchURL(r),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := templatesForRequest(r).browse.Execute(w, data); err != nil {
 		log.Printf("template error: %v", err)
 	}
 }
@@ -242,6 +234,9 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	var results []SearchResult
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if r.Context().Err() != nil {
+			return filepath.SkipAll
+		}
 		if err != nil {
 			return nil // skip unreadable
 		}

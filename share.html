@@ -7,7 +7,7 @@
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f5f7fa;color:#1e293b;min-height:100vh}
 header{background:#fff;border-bottom:1px solid #e2e8f0;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
-h1{font-size:1.05rem;margin:0;color:#4f46e5;font-weight:700}.timer{font-size:.8rem;color:#64748b;background:#f1f5f9;padding:7px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
+h1{font-size:1.05rem;margin:0;color:#4f46e5;font-weight:700}.header-actions{display:flex;align-items:center;gap:8px}.theme-link{font-size:.8rem;color:#4338ca;text-decoration:none;background:#eef2ff;padding:7px 10px;border-radius:8px;font-weight:600}.timer{font-size:.8rem;color:#64748b;background:#f1f5f9;padding:7px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
 nav{padding:10px 20px;font-size:.82rem;background:#fff;border-bottom:1px solid #e2e8f0}nav a{color:#4f46e5;text-decoration:none}nav span{margin:0 5px;color:#cbd5e1}
 .wrap{padding:20px 20px 60px;max-width:1100px;margin:auto}.notice{font-size:.83rem;color:#64748b;margin-bottom:12px}
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.04)}
@@ -33,7 +33,7 @@ tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color
 <body>
 <header>
   <h1>ServeIt</h1>
-  <div id="timer" class="timer" data-expiry="{{.ExpiresAt.Unix}}" data-hard-expiry="{{.HardExpiresAt.Unix}}" data-idle="{{.IdleTimeoutMinutes}}">Active</div>
+  <div class="header-actions"><a class="theme-link" href="{{.ThemeSwitchURL}}">Modern UI</a><div id="timer" class="timer" data-left="{{.RemainingSeconds}}" data-hard="{{.HardRemainingSeconds}}" data-idle="{{.IdleTimeoutMinutes}}">Active</div></div>
 </header>
 <nav>
   {{range $i,$c := .Parents}}
@@ -74,21 +74,20 @@ tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color
 </main>
 <script>
 var timer = document.getElementById('timer');
-var expiry = Number(timer.dataset.expiry) * 1000;
-var hardExpiry = Number(timer.dataset.hardExpiry) * 1000;
+var seconds = Number(timer.dataset.left);
+var hardSeconds = Number(timer.dataset.hard);
 var idleMinutes = Number(timer.dataset.idle);
 function updateTimer(){
-  var seconds = Math.max(0, Math.floor((expiry-Date.now())/1000));
   if (seconds <= 0) { timer.textContent = 'Expired'; return; }
   if (seconds < 60) timer.textContent = 'Expires in ' + seconds + 's';
   else if (seconds < 3600) timer.textContent = 'Expires in ' + Math.floor(seconds/60) + 'm ' + (seconds%60) + 's';
   else timer.textContent = 'Expires in ' + Math.floor(seconds/3600) + 'h ' + Math.floor((seconds%3600)/60) + 'm';
 }
 updateTimer();
-setInterval(updateTimer,1000);
+setInterval(function(){ seconds = Math.max(0, seconds - 1); hardSeconds = Math.max(0, hardSeconds - 1); updateTimer(); },1000);
 document.querySelectorAll('[data-download="true"]').forEach(function(link){
   link.addEventListener('click',function(){
-    expiry = Math.min(Date.now() + idleMinutes*60000, hardExpiry);
+    seconds = Math.min(idleMinutes * 60, hardSeconds);
     updateTimer();
   });
 });

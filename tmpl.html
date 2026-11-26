@@ -91,13 +91,14 @@ td.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}
     </svg>
     <input id="search-box" type="search" placeholder="Search files and folders…" autocomplete="off" spellcheck="false"/>
   </div>
+  <a class="admin-link" href="{{.ThemeSwitchURL}}">Modern UI</a>
   <a class="admin-link" href="/admin">Super admin</a>
 </header>
 
 <nav>
   {{range $i,$c := .Parents}}
     {{if $i}}<span>/</span>{{end}}
-    <a href="{{$c.Path}}">{{$c.Name}}</a>
+    <a href="{{pathEscape $c.Path}}">{{$c.Name}}</a>
   {{end}}
 </nav>
 
@@ -131,9 +132,9 @@ td.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}
         </td>
         <td class="name">
           {{if .IsDir}}
-            <a href="/{{.RelPath}}/">{{.Name}}</a>
+            <a href="/{{pathEscape .RelPath}}/">{{.Name}}</a>
           {{else}}
-            <a href="/{{.RelPath}}" download>{{.Name}}</a>
+            <a href="/{{pathEscape .RelPath}}" download>{{.Name}}</a>
           {{end}}
         </td>
         <td class="size">{{if .IsDir}}—{{else}}{{humanSize .Size}}{{end}}</td>

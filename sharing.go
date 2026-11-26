@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"mime"
 	"net"
 	"net/http"
@@ -25,27 +24,29 @@ const shareStateFilename = ".lanserve-shares.json"
 var (
 	adminPassword          string
 	adminPasswordGenerated bool
-	adminTmpl              *template.Template
-	shareTmpl              *template.Template
 	shareStore             *ShareStore
 	resolvedRoot           string
 )
 
 type AdminPageData struct {
-	CurrentPath string
-	CurrentRel  string
-	Entries     []Entry
-	Parents     []Crumb
+	CurrentPath    string
+	CurrentRel     string
+	Entries        []Entry
+	Parents        []Crumb
+	ThemeSwitchURL string
 }
 
 type SharedPageData struct {
-	Token              string
-	CurrentPath        string
-	Entries            []Entry
-	Parents            []Crumb
-	ExpiresAt          time.Time
-	HardExpiresAt      time.Time
-	IdleTimeoutMinutes int
+	Token                string
+	CurrentPath          string
+	Entries              []Entry
+	Parents              []Crumb
+	ExpiresAt            time.Time
+	HardExpiresAt        time.Time
+	IdleTimeoutMinutes   int
+	RemainingSeconds     int64
+	HardRemainingSeconds int64
+	ThemeSwitchURL       string
 }
 
 type ShareItem struct {
@@ -119,20 +120,6 @@ func initSharing(configuredPassword string) error {
 	return err
 }
 
-func initShareTemplates() error {
-	funcs := template.FuncMap{
-		"humanSize":  humanSize,
-		"formatTime": func(value time.Time) string { return value.Format("2006-01-02 15:04") },
-	}
-	var err error
-	adminTmpl, err = template.New("admin.html").Funcs(funcs).ParseFS(tmplFS, "admin.html")
-	if err != nil {
-		return err
-	}
-	shareTmpl, err = template.New("share.html").Funcs(funcs).ParseFS(tmplFS, "share.html")
-	return err
-}
-
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -181,8 +168,8 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := AdminPageData{CurrentPath: displaySharePath(rel), CurrentRel: rel, Entries: entries, Parents: adminBreadcrumbs(rel)}
-	if err := adminTmpl.Execute(w, data); err != nil {
+	data := AdminPageData{CurrentPath: displaySharePath(rel), CurrentRel: rel, Entries: entries, Parents: adminBreadcrumbs(rel), ThemeSwitchURL: themeSwitchURL(r)}
+	if err := templatesForRequest(r).admin.Execute(w, data); err != nil {
 		fmt.Printf("admin template error: %v\n", err)
 	}
 }
@@ -320,10 +307,26 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := SharedPageData{Token: token, CurrentPath: sharedDisplayPath(rel), Entries: entries, Parents: sharedBreadcrumbs(&shared, rel), ExpiresAt: shared.ExpiresAt, HardExpiresAt: shared.HardExpiresAt, IdleTimeoutMinutes: shared.IdleTimeoutMinutes}
-	if err := shareTmpl.Execute(w, data); err != nil {
+	remaining, hardRemaining := shareRemainingSeconds(shared, time.Now())
+	data := SharedPageData{Token: token, CurrentPath: sharedDisplayPath(rel), Entries: entries, Parents: sharedBreadcrumbs(&shared, rel), ExpiresAt: shared.ExpiresAt, HardExpiresAt: shared.HardExpiresAt, IdleTimeoutMinutes: shared.IdleTimeoutMinutes, RemainingSeconds: remaining, HardRemainingSeconds: hardRemaining, ThemeSwitchURL: themeSwitchURL(r)}
+	if err := templatesForRequest(r).share.Execute(w, data); err != nil {
 		fmt.Printf("share template error: %v\n", err)
 	}
+}
+
+func shareRemainingSeconds(shared Share, now time.Time) (int64, int64) {
+	remaining := shared.ExpiresAt.Sub(now)
+	hardRemaining := shared.HardExpiresAt.Sub(now)
+	if hardRemaining < remaining {
+		remaining = hardRemaining
+	}
+	if remaining < 0 {
+		remaining = 0
+	}
+	if hardRemaining < 0 {
+		hardRemaining = 0
+	}
+	return int64(remaining.Seconds()), int64(hardRemaining.Seconds())
 }
 
 func normalizeShareItems(paths []string) ([]ShareItem, error) {
