@@ -17,7 +17,7 @@ button{cursor:pointer}
 .link,.left{margin-inline-start:auto;font-size:14px}
 .link{font-weight:600;color:var(--acc)}
 .left{color:var(--mut)}
-.theme-picker{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.theme-choice{font-size:13px;font-weight:650;color:var(--acc);padding:5px 7px;border-radius:7px}.theme-choice:hover,.theme-choice.active{background:var(--acc-soft)}.theme-choice.active{color:var(--fg)}
+.theme-picker{position:relative;display:block}.theme-current{list-style:none;cursor:pointer;font-size:13px;font-weight:650;color:var(--acc);padding:5px 7px;border-radius:7px}.theme-current::-webkit-details-marker{display:none}.theme-current::after{content:"⌄";margin-inline-start:5px;font-size:11px}.theme-picker:hover .theme-current,.theme-picker[open] .theme-current,.theme-picker:focus-within .theme-current{background:var(--soft)}.theme-menu{position:absolute;top:calc(100% + 5px);inset-inline-end:0;z-index:10;display:none;min-width:112px;padding:5px;border:1px solid var(--line);border-radius:9px;background:var(--bg);box-shadow:0 10px 24px rgba(0,0,0,.16)}.theme-picker:hover .theme-menu,.theme-picker[open] .theme-menu,.theme-picker:focus-within .theme-menu{display:grid;gap:2px}.theme-choice{display:block;font-size:13px;font-weight:650;color:var(--acc);padding:6px 8px;border-radius:7px}.theme-choice:hover{background:var(--soft)}
 .search{position:relative;flex:1;max-width:380px;margin-inline-start:auto}
 .search+.link{margin-inline-start:0}
 .search .ic{position:absolute;inset-inline-start:13px;top:50%;translate:0 -50%;color:var(--mut);pointer-events:none}

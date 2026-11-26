@@ -15,7 +15,7 @@
 <div class="wrap">
   <header class="top">
     <a class="brand" href="/admin"><span class="mark"><svg class="ic"><use href="#i-mark"/></svg></span>ServeIt</a>
-    <div class="top-actions"><div class="theme-picker" role="group" aria-label="Theme">{{range .ThemeOptions}}{{if .Active}}<span class="theme-choice active" aria-current="page">{{.Label}}</span>{{else}}<a class="theme-choice" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}</div><a class="link" href="/">Browse files</a></div>
+    <div class="top-actions"><details class="theme-picker"><summary class="theme-current">{{range .ThemeOptions}}{{if .Active}}{{.Label}}{{end}}{{end}}</summary><div class="theme-menu" role="group" aria-label="Theme">{{range .ThemeOptions}}{{if not .Active}}<a class="theme-choice" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}</div></details><a class="link" href="/">Browse files</a></div>
   </header>
 
   <nav class="path" aria-label="Current folder">{{range $i,$c := .Parents}}{{if $i}}<i>/</i>{{end}}<a dir="auto" href="/admin?path={{$c.Path | urlquery}}">{{if $i}}{{$c.Name}}{{else}}Share{{end}}</a>{{end}}</nav>

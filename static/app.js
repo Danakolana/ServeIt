@@ -11,7 +11,11 @@ document.body.insertAdjacentHTML('afterbegin',`<svg style="position:absolute;wid
 let tt;
 function toast(m,bad){let e=$('#toast');if(!e){e=document.createElement('div');e.id='toast';e.setAttribute('role','status');document.body.append(e)}
  e.textContent=m;e.className=(m?'on ':'')+(bad?'bad':'');clearTimeout(tt);if(m&&!/…$/.test(m))tt=setTimeout(()=>e.className='',4000)}
-async function copy(s){try{await navigator.clipboard.writeText(s)}catch{const a=document.createElement('textarea');a.value=s;a.style.cssText='position:fixed;opacity:0';document.body.append(a);a.select();const ok=document.execCommand('copy');a.remove();if(!ok)throw 0}}
+async function copy(s){
+ if(navigator.clipboard&&window.isSecureContext){try{await navigator.clipboard.writeText(s);return}catch{}}
+ const a=document.createElement('textarea');a.value=s;a.setAttribute('readonly','');a.style.cssText='position:fixed;top:0;left:0;opacity:0;pointer-events:none';document.body.append(a);a.focus();a.select();a.setSelectionRange(0,s.length);
+ let ok=false;try{ok=document.execCommand('copy')}catch{}a.remove();if(!ok)throw new Error('Copy failed')
+}
 async function zip(url,paths,st){
  st('Preparing…');
  const post=q=>fetch(url+q,{method:'POST',headers:J,body:JSON.stringify({paths})});

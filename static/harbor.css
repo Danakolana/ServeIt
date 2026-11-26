@@ -65,10 +65,15 @@ button { cursor: pointer; }
   border-bottom: 1px solid var(--line);
 }
 .top-actions { display: flex; align-items: center; gap: 16px; }
-.theme-picker { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.theme-choice { color: var(--accent-strong); font-size: 13px; font-weight: 750; padding: 5px 7px; border-radius: 7px; }
-.theme-choice:hover, .theme-choice.active { background: var(--accent-soft); }
-.theme-choice.active { color: var(--fg); }
+.theme-picker { position: relative; display: block; }
+.theme-current { list-style: none; cursor: pointer; color: var(--accent-strong); font-size: 13px; font-weight: 750; padding: 5px 7px; border-radius: 7px; }
+.theme-current::-webkit-details-marker { display: none; }
+.theme-current::after { content: "⌄"; margin-inline-start: 5px; font-size: 11px; }
+.theme-picker:hover .theme-current, .theme-picker[open] .theme-current, .theme-picker:focus-within .theme-current { background: var(--accent-soft); }
+.theme-menu { position: absolute; top: calc(100% + 5px); inset-inline-end: 0; z-index: 10; display: none; min-width: 112px; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); box-shadow: 0 10px 24px rgba(0, 0, 0, .16); }
+.theme-picker:hover .theme-menu, .theme-picker[open] .theme-menu, .theme-picker:focus-within .theme-menu { display: grid; gap: 2px; }
+.theme-choice { display: block; color: var(--accent-strong); font-size: 13px; font-weight: 750; padding: 6px 8px; border-radius: 7px; }
+.theme-choice:hover { background: var(--accent-soft); }
 .brand { display: inline-flex; align-items: center; gap: 11px; font-size: 16px; font-weight: 780; letter-spacing: -.035em; }
 .mark {
   display: grid; place-items: center; width: 34px; height: 34px;

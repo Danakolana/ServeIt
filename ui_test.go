@@ -41,6 +41,9 @@ func TestAllUITemplateSetsParseAndRender(t *testing.T) {
 		if !strings.Contains(output.String(), marker) {
 			t.Fatalf("rendered %s UI does not contain %q", theme, marker)
 		}
+		if !strings.Contains(output.String(), `class="theme-current"`) || strings.Count(output.String(), `class="theme-choice"`) != 2 {
+			t.Fatalf("rendered %s UI does not expose a collapsed picker with two alternate themes", theme)
+		}
 		for name, templateData := range map[string]struct {
 			view *template.Template
 			data any
@@ -51,6 +54,9 @@ func TestAllUITemplateSetsParseAndRender(t *testing.T) {
 			}
 			if !strings.Contains(output.String(), "theme-picker") {
 				t.Fatalf("rendered %s %s UI has no theme picker", theme, name)
+			}
+			if !strings.Contains(output.String(), `class="theme-current"`) || strings.Count(output.String(), `class="theme-choice"`) != 2 {
+				t.Fatalf("rendered %s %s UI does not expose a collapsed picker with two alternate themes", theme, name)
 			}
 		}
 	}

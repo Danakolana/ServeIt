@@ -16,7 +16,7 @@
   <header class="top">
     <a class="brand" href="/"><span class="mark"><svg class="ic"><use href="#i-mark"/></svg></span>ServeIt</a>
     <label class="search"><svg class="ic"><use href="#i-find"/></svg><input id="q" type="search" placeholder="Search this folder and below" autocomplete="off" spellcheck="false" aria-label="Search files"></label>
-    <div class="theme-picker" role="group" aria-label="Theme">{{range .ThemeOptions}}{{if .Active}}<span class="theme-choice active" aria-current="page">{{.Label}}</span>{{else}}<a class="theme-choice" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}</div>
+    <details class="theme-picker"><summary class="theme-current">{{range .ThemeOptions}}{{if .Active}}{{.Label}}{{end}}{{end}}</summary><div class="theme-menu" role="group" aria-label="Theme">{{range .ThemeOptions}}{{if not .Active}}<a class="theme-choice" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}</div></details>
     <a class="link" href="/admin">Share</a>
   </header>
 
