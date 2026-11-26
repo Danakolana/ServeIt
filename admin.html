@@ -104,7 +104,7 @@ var apiBase = window.location.protocol + '//' + window.location.host;
 var shares = [];
 var checks = Array.from(document.querySelectorAll('.item-check'));
 var savedSelection = [];
-try { savedSelection = JSON.parse(sessionStorage.getItem('lanserve-share-selection') || '[]'); } catch (_) {}
+try { savedSelection = JSON.parse(sessionStorage.getItem('serveit-share-selection') || '[]'); } catch (_) {}
 var selectedPaths = new Set(savedSelection);
 checks.forEach(function(item){ item.checked = selectedPaths.has(item.value); });
 var createButton = document.getElementById('create-share');
@@ -118,7 +118,7 @@ function updateSelection() {
 	checks.forEach(function(item){
 	  if (item.checked) selectedPaths.add(item.value); else selectedPaths.delete(item.value);
 	});
-	sessionStorage.setItem('lanserve-share-selection', JSON.stringify(Array.from(selectedPaths)));
+	sessionStorage.setItem('serveit-share-selection', JSON.stringify(Array.from(selectedPaths)));
 	var count = selectedPaths.size;
   document.getElementById('selection-count').textContent = count + ' selected';
   createButton.disabled = count === 0;
@@ -148,7 +148,7 @@ createButton.addEventListener('click', async function(){
     message.className = 'success';
     message.textContent = 'Share link created.';
 	selectedPaths.clear();
-	sessionStorage.removeItem('lanserve-share-selection');
+	sessionStorage.removeItem('serveit-share-selection');
 	checks.forEach(function(item){ item.checked = false; });
     if (selectAll) selectAll.checked = false;
     updateSelection();

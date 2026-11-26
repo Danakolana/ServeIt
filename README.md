@@ -136,7 +136,7 @@ ServeIt is intended for a trusted local network. It is not hardened for direct e
 - **The main browser exposes the whole configured root.** With no `--password`, anyone who can reach the server can browse and download it. Dotfiles are currently included, so use a dedicated directory.
 - **Guest links are the isolation boundary.** A guest can access only the files and folder descendants selected when the link was created. Anyone who obtains the URL can use it until it expires or is revoked.
 - **Admin credentials matter.** If `--admin-password` is omitted while `--password` is set, the same password protects both areas. Pass a separate admin password when the main-browser password is shared with other people.
-- **Share state is reserved.** Temporary-link metadata is stored in `.lanserve-shares.json` under the served root. ServeIt hides that file from normal browsing, search, guest links, and ZIP downloads.
+- **Share state is reserved.** Temporary-link metadata is stored in `.serveit-shares.json` under the served root. ServeIt hides that file from normal browsing, search, guest links, and ZIP downloads. Existing state from older releases is read automatically and new writes use the ServeIt filename.
 
 Security-default improvements are tracked in the [roadmap](BACKLOG.md). If you discover a vulnerability, avoid including secrets or private share URLs in a public issue.
 

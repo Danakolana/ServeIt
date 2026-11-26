@@ -1,4 +1,4 @@
-module lanserve
+module github.com/Danakolana/ServeIt
 
 go 1.24.0
 

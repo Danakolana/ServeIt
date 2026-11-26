@@ -1,7 +1,7 @@
-lanserve
 ServeIt
 ServeIt.exe
 scripts/.capture-*
+.serveit-shares.json
 .lanserve-shares.json
 graft/
 .claude/

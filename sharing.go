@@ -19,7 +19,10 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-const shareStateFilename = ".lanserve-shares.json"
+const (
+	shareStateFilename       = ".serveit-shares.json"
+	legacyShareStateFilename = ".lanserve-shares.json"
+)
 
 var (
 	adminPassword          string
@@ -116,7 +119,24 @@ func initSharing(configuredPassword string) error {
 		}
 		adminPasswordGenerated = true
 	}
-	shareStore, err = loadShareStore(filepath.Join(root, shareStateFilename))
+	statePath := filepath.Join(root, shareStateFilename)
+	if _, statErr := os.Stat(statePath); errors.Is(statErr, os.ErrNotExist) {
+		legacyPath := filepath.Join(root, legacyShareStateFilename)
+		if _, legacyErr := os.Stat(legacyPath); legacyErr == nil {
+			shareStore, err = loadShareStore(legacyPath)
+			if err == nil {
+				// New writes use the ServeIt name while preserving old state until
+				// the owner removes it or the migration is otherwise completed.
+				shareStore.path = statePath
+			}
+			return err
+		} else if !errors.Is(legacyErr, os.ErrNotExist) {
+			return legacyErr
+		}
+	} else if statErr != nil {
+		return statErr
+	}
+	shareStore, err = loadShareStore(statePath)
 	return err
 }
 
@@ -437,7 +457,12 @@ func secureResolve(rel string) (string, error) {
 }
 
 func isShareStatePath(rel string) bool {
-	return rel == shareStateFilename || strings.HasPrefix(rel, shareStateFilename+".") || strings.HasPrefix(rel, shareStateFilename+"/")
+	for _, filename := range []string{shareStateFilename, legacyShareStateFilename} {
+		if rel == filename || strings.HasPrefix(rel, filename+".") || strings.HasPrefix(rel, filename+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func displaySharePath(rel string) string {

@@ -112,7 +112,7 @@ No password is the default, arbitrary Host headers are accepted, and dotfiles ar
 
 The state file is written inside the served root. Existing shares loaded from a read-only USB drive or mount fail on every view because activity persistence cannot create and rename the temporary file; the resulting storage error is currently reported as “Share link not found.” Invalid JSON also aborts startup, and every view rewrites the complete file while expired and revoked records accumulate forever.
 
-- Add an explicit `--state-file` option and environment equivalent. Choose a writable per-user default keyed by the canonical served root, with a documented compatibility or one-time migration path for existing `.lanserve-shares.json` files.
+- Add an explicit `--state-file` option and environment equivalent. Choose a writable per-user default keyed by the canonical served root, with a documented compatibility or one-time migration path for existing state files.
 - Keep share creation and revocation durable before reporting success. Coalesce page-view, download-count, and idle-expiry writes over a short bounded interval, flush them during graceful shutdown, and document the maximum counter/activity loss after a crash.
 - Never mutate the in-memory record permanently when persistence fails. Return a distinct internal/storage error and show an accurate 500 response instead of “not found.”
 - If the state JSON is corrupt, atomically quarantine it with a timestamped backup name, start with an empty store, and print a warning containing the recovery path. Do not overwrite the only corrupt copy.
@@ -149,9 +149,9 @@ HEAD requests and every Range request for a shared file currently increment the 
 
 **Status: pending. Priority: high before the next release.**
 
-`go install github.com/Danakolana/ServeIt@v1.0.2` fails because `go.mod` declares `module lanserve`. The release workflow publishes without first running tests or vet, grants `contents: write` to build jobs, interpolates the manual tag input directly into shell source, and references actions by mutable major-version tags.
+The module path now matches the GitHub repository. The release workflow still needs hardening: it publishes without first running tests or vet, grants `contents: write` to build jobs, interpolates the manual tag input directly into shell source, and references actions by mutable major-version tags.
 
-- Change the module path to `github.com/Danakolana/ServeIt`, update imports if needed, and verify `go install github.com/Danakolana/ServeIt@<new-tag>` in a clean environment.
+- Verify `go install github.com/Danakolana/ServeIt@<new-tag>` in a clean environment.
 - Add a verification job that runs `go test ./...`, `go vet ./...`, and the supported cross-build matrix before publishing. The release job must depend on it.
 - Give the workflow read-only permissions by default and grant `contents: write` only to the publishing job.
 - Pass manual inputs through environment variables, validate release tags against the intended version format, and ensure a manual release builds the commit identified by that tag.

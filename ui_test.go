@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -78,5 +81,36 @@ func TestShareRemainingSecondsUsesEarliestDeadline(t *testing.T) {
 	remaining, hard := shareRemainingSeconds(Share{ExpiresAt: now.Add(90 * time.Second), HardExpiresAt: now.Add(5 * time.Minute)}, now)
 	if remaining != 90 || hard != 300 {
 		t.Fatalf("remaining = %d, hard = %d", remaining, hard)
+	}
+}
+
+func TestLegacyShareStateIsLoadedWithServeItWritePath(t *testing.T) {
+	dir := t.TempDir()
+	payload, err := json.Marshal([]Share{{ID: "legacy-share"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, legacyShareStateFilename), payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	previousRoot, previousResolved := root, resolvedRoot
+	previousPassword, previousAdminPassword := password, adminPassword
+	previousGenerated, previousStore := adminPasswordGenerated, shareStore
+	root, resolvedRoot, password = dir, dir, "main-password"
+	t.Cleanup(func() {
+		root, resolvedRoot = previousRoot, previousResolved
+		password, adminPassword = previousPassword, previousAdminPassword
+		adminPasswordGenerated, shareStore = previousGenerated, previousStore
+	})
+
+	if err := initSharing("admin-password"); err != nil {
+		t.Fatal(err)
+	}
+	if len(shareStore.shares) != 1 || shareStore.shares[0].ID != "legacy-share" {
+		t.Fatalf("legacy shares were not loaded: %#v", shareStore.shares)
+	}
+	if shareStore.path != filepath.Join(dir, shareStateFilename) {
+		t.Fatalf("new writes use %q, want %q", shareStore.path, filepath.Join(dir, shareStateFilename))
 	}
 }
