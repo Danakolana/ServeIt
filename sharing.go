@@ -29,6 +29,7 @@ const (
 	maxShareItems            = 500
 	maxShareTimeoutMinutes   = 1440
 	shareRetentionPeriod     = 30 * 24 * time.Hour
+	activityCoalesceDelay    = 250 * time.Millisecond
 )
 
 var (
@@ -108,11 +109,13 @@ type ShareAdminView struct {
 }
 
 type ShareStore struct {
-	mu        sync.Mutex
-	persistMu sync.Mutex
-	version   uint64
-	path      string
-	shares    []*Share
+	mu            sync.Mutex
+	persistMu     sync.Mutex
+	version       uint64
+	path          string
+	shares        []*Share
+	activityDirty bool
+	activityTimer *time.Timer
 }
 
 var (
@@ -445,7 +448,7 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if trackDownload && statusWriter.status >= http.StatusOK && statusWriter.status < http.StatusMultipleChoices {
-				if _, err := shareStore.Use(token, rel, true); err != nil {
+				if _, err := shareStore.Touch(token, rel, true); err != nil {
 					log.Printf("share download activity update failed: %v", err)
 				}
 			}
@@ -464,7 +467,7 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		entries = visible
 	}
-	shared, err = shareStore.Use(token, rel, false)
+	shared, err = shareStore.Touch(token, rel, false)
 	if err != nil {
 		serveShareError(w, err)
 		return
@@ -740,10 +743,12 @@ func (store *ShareStore) Create(items []ShareItem, idleMinutes, maxMinutes int) 
 		expiry = hardExpiry
 	}
 	created := &Share{ID: id, Token: token, Items: items, CreatedAt: now, LastActivityAt: now, ExpiresAt: expiry, HardExpiresAt: hardExpiry, IdleTimeoutMinutes: idleMinutes, MaxLifetimeMinutes: maxMinutes}
+	store.persistMu.Lock()
+	defer store.persistMu.Unlock()
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.shares = append([]*Share{created}, store.shares...)
-	if err := store.persistLocked(); err != nil {
+	if err := store.writeSnapshot(store.shares); err != nil {
 		store.shares = store.shares[1:]
 		return Share{}, err
 	}
@@ -787,6 +792,8 @@ func (store *ShareStore) GetActive(token string) (Share, error) {
 }
 
 func (store *ShareStore) Use(token, rel string, download bool) (Share, error) {
+	store.persistMu.Lock()
+	defer store.persistMu.Unlock()
 	for attempt := 0; attempt < 3; attempt++ {
 		store.mu.Lock()
 		index := -1
@@ -822,7 +829,7 @@ func (store *ShareStore) Use(token, rel string, download bool) (Share, error) {
 			snapshot.PageViews++
 		}
 		all[index] = &snapshot
-		if err := store.persistSnapshot(all); err != nil {
+		if err := store.writeSnapshot(all); err != nil {
 			return Share{}, fmt.Errorf("%w: %v", errShareStorage, err)
 		}
 		store.mu.Lock()
@@ -839,14 +846,96 @@ func (store *ShareStore) Use(token, rel string, download bool) (Share, error) {
 	return Share{}, fmt.Errorf("%w: share state changed during update", errShareStorage)
 }
 
+// Touch records guest activity in memory and persists it after a short bounded
+// delay. Share creation and revocation still use synchronous durable writes.
+func (store *ShareStore) Touch(token, rel string, download bool) (Share, error) {
+	shared, err := store.GetActive(token)
+	if err != nil {
+		return Share{}, err
+	}
+	if rel != "" && !shareAllows(&shared, rel) {
+		return Share{}, errShareDenied
+	}
+	now := time.Now()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for _, item := range store.shares {
+		if item.Token != token {
+			continue
+		}
+		if item.Revoked || !now.Before(item.ExpiresAt) || !now.Before(item.HardExpiresAt) {
+			return Share{}, errShareExpired
+		}
+		item.LastActivityAt = now
+		item.ExpiresAt = now.Add(time.Duration(item.IdleTimeoutMinutes) * time.Minute)
+		if item.ExpiresAt.After(item.HardExpiresAt) {
+			item.ExpiresAt = item.HardExpiresAt
+		}
+		if download {
+			item.Downloads++
+		} else {
+			item.PageViews++
+		}
+		store.version++
+		store.activityDirty = true
+		if store.path != "" {
+			store.scheduleActivityFlushLocked()
+		}
+		return cloneShare(*item), nil
+	}
+	return Share{}, errShareNotFound
+}
+
+func (store *ShareStore) flushActivity() error {
+	store.persistMu.Lock()
+	defer store.persistMu.Unlock()
+	store.mu.Lock()
+	if !store.activityDirty {
+		store.activityTimer = nil
+		store.mu.Unlock()
+		return nil
+	}
+	shares := cloneShares(store.shares)
+	version := store.version
+	store.mu.Unlock()
+	if err := store.writeSnapshot(shares); err != nil {
+		store.mu.Lock()
+		store.activityTimer = nil
+		store.mu.Unlock()
+		return err
+	}
+	store.mu.Lock()
+	store.activityTimer = nil
+	if store.version == version {
+		store.activityDirty = false
+	} else {
+		store.scheduleActivityFlushLocked()
+	}
+	store.mu.Unlock()
+	return nil
+}
+
+func (store *ShareStore) scheduleActivityFlushLocked() {
+	if store.activityTimer != nil {
+		return
+	}
+	store.activityTimer = time.AfterFunc(activityCoalesceDelay, func() {
+		if err := store.flushActivity(); err != nil {
+			log.Printf("share activity flush failed: %v", err)
+		}
+	})
+}
+
 func (store *ShareStore) Revoke(id string) error {
+	store.persistMu.Lock()
+	defer store.persistMu.Unlock()
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	for _, item := range store.shares {
 		if item.ID == id {
 			before := *item
 			item.Revoked = true
-			if err := store.persistLocked(); err != nil {
+			if err := store.writeSnapshot(store.shares); err != nil {
 				*item = before
 				return fmt.Errorf("%w: %v", errShareStorage, err)
 			}
@@ -857,13 +946,13 @@ func (store *ShareStore) Revoke(id string) error {
 	return errShareNotFound
 }
 
-func (store *ShareStore) persistLocked() error {
-	return store.persistSnapshot(store.shares)
-}
-
 func (store *ShareStore) persistSnapshot(shares []*Share) error {
 	store.persistMu.Lock()
 	defer store.persistMu.Unlock()
+	return store.writeSnapshot(shares)
+}
+
+func (store *ShareStore) writeSnapshot(shares []*Share) error {
 	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
 		return err
 	}
@@ -905,10 +994,28 @@ func (store *ShareStore) persistSnapshot(shares []*Share) error {
 }
 
 func (store *ShareStore) Flush() error {
-	store.mu.Lock()
-	shares := cloneShares(store.shares)
-	store.mu.Unlock()
-	return store.persistSnapshot(shares)
+	store.persistMu.Lock()
+	defer store.persistMu.Unlock()
+	for {
+		store.mu.Lock()
+		if store.activityTimer != nil {
+			store.activityTimer.Stop()
+			store.activityTimer = nil
+		}
+		shares := cloneShares(store.shares)
+		version := store.version
+		store.mu.Unlock()
+		if err := store.writeSnapshot(shares); err != nil {
+			return err
+		}
+		store.mu.Lock()
+		if store.version == version {
+			store.activityDirty = false
+			store.mu.Unlock()
+			return nil
+		}
+		store.mu.Unlock()
+	}
 }
 
 func cloneShare(share Share) Share {

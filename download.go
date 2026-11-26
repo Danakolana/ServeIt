@@ -103,7 +103,7 @@ func shareDownloadHandler(w http.ResponseWriter, r *http.Request, token string) 
 		return
 	}
 	if writeZipDownload(w, entries) {
-		if _, err := shareStore.Use(token, "", true); err != nil {
+		if _, err := shareStore.Touch(token, "", true); err != nil {
 			log.Printf("share ZIP activity update failed: %v", err)
 		}
 	}

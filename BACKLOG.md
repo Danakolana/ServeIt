@@ -108,30 +108,30 @@ No password is the default. ServeIt now validates Host headers, supports an expl
 
 ## 9. Separate durable share state from the served directory
 
-**Status: state isolation, pruning, and shutdown flushing implemented; activity coalescing remains. Priority: high.**
+**Status: state isolation, pruning, shutdown flushing, and bounded activity coalescing implemented; broader durability tests remain. Priority: high.**
 
-Older releases wrote state inside the served root. Existing shares loaded from a read-only USB drive or mount failed on every view because activity persistence could not create and rename the temporary file; invalid JSON also aborted startup, and every view rewrote the complete file while expired and revoked records accumulated forever. The remaining persistence work is bounded coalescing for activity updates.
+Older releases wrote state inside the served root. Existing shares loaded from a read-only USB drive or mount failed on every view because activity persistence could not create and rename the temporary file; invalid JSON also aborted startup, and every view rewrote the complete file while expired and revoked records accumulated forever. Activity writes are now coalesced while durable mutations remain synchronous.
 
 - Add an explicit `--state-file` option and environment equivalent. Choose a writable per-user default keyed by the canonical served root, with a documented compatibility or one-time migration path for existing state files. **Implemented with `SERVEIT_STATE_FILE`, per-user root-keyed defaults, and legacy-file migration.**
-- Keep share creation and revocation durable before reporting success. Coalesce page-view, download-count, and idle-expiry writes over a short bounded interval, flush them during graceful shutdown, and document the maximum counter/activity loss after a crash.
-- Never mutate the in-memory record permanently when persistence fails. Return a distinct internal/storage error and show an accurate 5xx response instead of “not found.” **Implemented for activity updates and revocation.**
+- Keep share creation and revocation durable before reporting success. Coalesce page-view, download-count, and idle-expiry writes over a short bounded interval, flush them during graceful shutdown, and document the maximum counter/activity loss after a crash. **Implemented with a 250 ms bounded activity flush and shutdown flush.**
+- Never mutate the in-memory record permanently when persistence fails. Return a distinct internal/storage error and show an accurate 5xx response instead of “not found.” **Implemented for synchronous share creation and revocation; coalesced activity writes report failures through the logger and shutdown result.**
 - If the state JSON is corrupt, atomically quarantine it with a timestamped backup name, start with an empty store, and print a warning containing the recovery path. Do not overwrite the only corrupt copy. **Implemented.**
 - Prune revoked and long-expired shares using a documented retention window so the file and admin response stay bounded. **Implemented with a 30-day retention window.**
-- Test read-only roots, unwritable state destinations, interrupted writes, corrupt JSON recovery, restart persistence, migration, and pruning. **Pruning and persistence failure coverage implemented.**
+- Test read-only roots, unwritable state destinations, interrupted writes, corrupt JSON recovery, restart persistence, migration, and pruning. **Pruning, persistence failure, and coalesced activity coverage implemented.**
 
 ## 10. Harden authentication and HTTP trust boundaries
 
-**Status: security baseline implemented; CSP and broader test coverage remain. Priority: high.**
+**Status: security baseline, CSP, and focused boundary tests implemented; broader proxy integration remains. Priority: high.**
 
 The browser and admin doors now support separate credentials, constant-time checks, bounded failure throttling, same-origin mutation checks, and a restrictive script policy. Broader authentication and proxy test coverage remains.
 
 - Always generate a separate admin password unless the owner explicitly supplies one. Do not reuse the browser password implicitly. **Implemented.**
 - Support `SERVEIT_PASSWORD`, `SERVEIT_ADMIN_PASSWORD`, and restrictive password-file options. Define and test precedence without printing supplied secrets outside the existing startup credential panel. **Implemented.**
 - Compare credentials in constant time and add bounded per-client authentication rate limiting for the browser and admin doors. Avoid global sleeps that let one client stall everyone else. **Implemented.**
-- Require `application/json` for admin JSON mutations. Add Origin checks for authenticated state-changing browser requests where applicable.
-- Ignore forwarded scheme and host headers by default. Honor them only behind an explicitly configured trusted proxy, then validate their syntax before generating share URLs.
+- Require `application/json` for admin JSON mutations. Add Origin checks for authenticated state-changing browser requests where applicable. **Implemented and covered by mutation-boundary tests.**
+- Ignore forwarded scheme and host headers by default. Honor them only behind an explicitly configured trusted proxy, then validate their syntax before generating share URLs. **Unconfigured forwarded headers are ignored; canonical URLs use the explicit public URL or the validated request host.**
 - Add a Content Security Policy. Use per-response nonces for the existing embedded scripts/styles or move them to dedicated embedded asset routes; do not weaken the policy with unrestricted inline script execution. **Implemented for embedded scripts with per-response nonces.**
-- Add authentication, rate-limit, Content-Type, proxy-spoofing, and CSP tests.
+- Add authentication, rate-limit, Content-Type, proxy-spoofing, and CSP tests. **Implemented with focused rate-limit, content-type, forwarded-header, Host, and CSP coverage.**
 
 ## 11. Correct share activity, countdowns, and admin polling cost
 

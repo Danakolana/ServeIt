@@ -54,6 +54,55 @@ func TestConfiguredSecretsAndConstantTimeAuth(t *testing.T) {
 	}
 }
 
+func TestAuthenticationRateLimitAndContentTypeBoundary(t *testing.T) {
+	previousPassword, previousLimiter := password, authLimiterStore
+	password = "browser-secret"
+	authLimiterStore = newAuthLimiter()
+	t.Cleanup(func() { password, authLimiterStore = previousPassword, previousLimiter })
+
+	handler := withAuth(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	for attempt := 0; attempt < authFailureLimit; attempt++ {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = "192.0.2.10:1234"
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("failed authentication attempt %d returned %d", attempt, recorder.Code)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "192.0.2.10:1234"
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusTooManyRequests || recorder.Header().Get("Retry-After") != "30" {
+		t.Fatalf("rate-limited authentication returned %d with Retry-After %q", recorder.Code, recorder.Header().Get("Retry-After"))
+	}
+
+	valid := httptest.NewRequest(http.MethodGet, "/", nil)
+	valid.RemoteAddr = "192.0.2.11:1234"
+	valid.SetBasicAuth("admin", password)
+	validRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(validRecorder, valid)
+	if validRecorder.Code != http.StatusNoContent {
+		t.Fatalf("valid authentication returned %d", validRecorder.Code)
+	}
+
+	mutation := httptest.NewRequest(http.MethodPost, "http://files.example.test/api/admin/shares", strings.NewReader("{}"))
+	mutation.Header.Set("X-ServeIt-Request", "admin")
+	mutation.Header.Set("Origin", "http://files.example.test")
+	for _, contentType := range []string{"", "text/plain", "application/json; charset=utf-8"} {
+		mutation.Header.Set("Content-Type", contentType)
+		err := validateAdminMutation(mutation, true)
+		if contentType == "text/plain" || contentType == "" {
+			if err == nil {
+				t.Fatalf("content type %q was accepted", contentType)
+			}
+		} else if err != nil {
+			t.Fatalf("content type %q was rejected: %v", contentType, err)
+		}
+	}
+}
+
 func TestAdminPasswordIsNotImplicitlyBrowserPassword(t *testing.T) {
 	dir := t.TempDir()
 	previousRoot, previousResolved := root, resolvedRoot
@@ -148,6 +197,26 @@ func TestShareListUsesConditionalPolling(t *testing.T) {
 	if second.Code != http.StatusNotModified {
 		t.Fatalf("conditional list status=%d body=%q", second.Code, second.Body.String())
 	}
+}
+
+func TestShareActivityIsCoalescedAndFlushed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shares.json")
+	store := &ShareStore{path: path, shares: []*Share{{Token: "token", IdleTimeoutMinutes: 10, ExpiresAt: time.Now().Add(time.Hour), HardExpiresAt: time.Now().Add(2 * time.Hour)}}}
+	if _, err := store.Touch("token", "", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Touch("token", "", true); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		persisted, err := loadShareStore(path)
+		if err == nil && len(persisted.shares) == 1 && persisted.shares[0].Downloads == 2 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("coalesced activity was not persisted before deadline")
 }
 
 func TestServeWithSignalChannelStopsCleanly(t *testing.T) {
@@ -319,6 +388,16 @@ func TestPublicURLAndAdminMutationChecks(t *testing.T) {
 	if got := requestBaseURL(httptest.NewRequest(http.MethodGet, "http://attacker.example.test/admin", nil)); got != publicBaseURL {
 		t.Fatalf("requestBaseURL() = %q, want %q", got, publicBaseURL)
 	}
+
+	publicBaseURL = ""
+	previousPort := serverPort
+	serverPort = ""
+	t.Cleanup(func() { serverPort = previousPort })
+	forwarded := httptest.NewRequest(http.MethodGet, "http://files.example.test/admin", nil)
+	forwarded.Header.Set("X-Forwarded-Proto", "https")
+	if got := requestBaseURL(forwarded); got != "http://files.example.test" {
+		t.Fatalf("requestBaseURL() trusted an unconfigured forwarded scheme: %q", got)
+	}
 }
 
 func TestHostValidationAndHiddenPathDefaults(t *testing.T) {
@@ -326,8 +405,19 @@ func TestHostValidationAndHiddenPathDefaults(t *testing.T) {
 	t.Cleanup(func() { allowedHosts, showHidden = previousHosts, previousHidden })
 	allowedHosts = buildAllowedHosts("127.0.0.1", []string{"files.example.test"})
 	showHidden = false
-	if !hostAllowed("files.example.test:8080") || hostAllowed("attacker.example.test:8080") {
-		t.Fatal("unexpected Host validation result")
+	for _, test := range []struct {
+		value string
+		want  bool
+	}{
+		{value: "files.example.test:8080", want: true},
+		{value: "files.example.test.", want: true},
+		{value: "attacker.example.test:8080", want: false},
+		{value: "[::1]:8080", want: true},
+		{value: "", want: false},
+	} {
+		if got := hostAllowed(test.value); got != test.want {
+			t.Errorf("hostAllowed(%q) = %v, want %v", test.value, got, test.want)
+		}
 	}
 	if !isHiddenPath(".env") || !isHiddenPath("project/.git/config") || isHiddenPath("project/readme.md") {
 		t.Fatal("unexpected hidden path classification")
