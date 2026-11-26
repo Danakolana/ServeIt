@@ -81,3 +81,116 @@ The archive already stores file bytes without compression and streams them, whic
 Implementation: the ZIP writer no longer flushes after each file. The browser reuses its folder plan for the size display and makes a lightweight `?check=1` request before submitting the archive form, avoiding another full tree walk. The check still rejects missing selected paths and expired or unauthorized shares. Direct single-file links are unchanged.
 
 Loopback probe (`PERF_PROBE=1 go test -run TestPerformanceProbe -v`): 2,000 files of 4 KiB each, three runs, median values. Click-to-first-byte fell from 35.2 ms to 14.8 ms; total click-to-complete fell from 108.9 ms to 70.4 ms; effective throughput rose from 74.1 to 114.5 MiB/s. Both flows used two requests; the preflight changed from a full plan to a lightweight check. Total Go allocation fell from about 76.9 to 72.2 MB per run. A 32 MiB single-file ZIP probe was noisy and did not show a clear gain. These numbers are local loopback results, not a physical LAN measurement.
+
+## 7. Make every valid filename downloadable
+
+**Status: pending. Priority: high.**
+
+The main browser currently mishandles several ordinary filesystem names. `http.ServeFile` redirects a request ending in `/index.html` to its directory, so an `index.html` file cannot be downloaded directly. Main-browser links also leave `#`, `?`, and percent sequences with URL semantics instead of encoding them as filename bytes. A symlink whose resolved target is a directory is rendered as a downloadable file.
+
+- Serve direct files in both the main browser and guest shares with `os.Open` plus `http.ServeContent`, retaining HEAD, Range, modification time, MIME detection, and the current attachment filename.
+- Add one path-to-URL helper that percent-encodes each path segment while preserving `/` separators. Use it for main listing links and breadcrumbs. Keep query-parameter paths encoded as query data.
+- Classify an allowed symlink using its resolved target so a symlink to a directory receives directory navigation, sorting, and selection behavior.
+- Add handler tests for nested `index.html`, spaces, Unicode, `#`, `?`, `%41`, literal `%`, and symlinked directories. Assert the rendered URL and the bytes returned by following it.
+
+## 8. Protect open-mode servers from accidental exposure and DNS rebinding
+
+**Status: pending. Priority: critical.**
+
+No password is the default, arbitrary Host headers are accepted, and dotfiles are served like any other file. A browser can therefore reach an open server through DNS rebinding, and starting ServeIt in a home or project directory can expose `.env`, `.git`, `.ssh`, and similar content.
+
+- Validate the request Host before routing. Accept configured IP literals, loopback names, the machine hostname, and explicit names supplied by a repeatable `--allow-host` option. Reject other hosts consistently, including requests for files, search, shares, and admin APIs.
+- Replace the fixed IPv4-only bind with an explicit `--listen` address and support IPv6 listeners and bracketed IPv6 URLs. Preserve a predictable default and show every reachable address accurately at startup.
+- Hide any path segment beginning with `.` by default. Enforce this in direct file access, listings, search, share creation and browsing, ZIP planning, checks, and archive generation. Add `--show-hidden` as an explicit opt-in.
+- Continue reserving the share-state file even when hidden files are enabled. On case-insensitive filesystems, identify the actual state file with filesystem identity (`os.SameFile` or an equivalent resolved comparison) rather than a case-sensitive spelling check.
+- Print a concise startup warning when the full browser has no password. State whether hidden files are excluded and show the opt-in flag.
+- Add DNS-rebinding-style Host tests and table-driven hidden-path tests, including nested dot directories, alternate state-file casing, symlinks, search, and ZIP requests.
+
+## 9. Separate durable share state from the served directory
+
+**Status: pending. Priority: high.**
+
+The state file is written inside the served root. Existing shares loaded from a read-only USB drive or mount fail on every view because activity persistence cannot create and rename the temporary file; the resulting storage error is currently reported as “Share link not found.” Invalid JSON also aborts startup, and every view rewrites the complete file while expired and revoked records accumulate forever.
+
+- Add an explicit `--state-file` option and environment equivalent. Choose a writable per-user default keyed by the canonical served root, with a documented compatibility or one-time migration path for existing `.lanserve-shares.json` files.
+- Keep share creation and revocation durable before reporting success. Coalesce page-view, download-count, and idle-expiry writes over a short bounded interval, flush them during graceful shutdown, and document the maximum counter/activity loss after a crash.
+- Never mutate the in-memory record permanently when persistence fails. Return a distinct internal/storage error and show an accurate 500 response instead of “not found.”
+- If the state JSON is corrupt, atomically quarantine it with a timestamped backup name, start with an empty store, and print a warning containing the recovery path. Do not overwrite the only corrupt copy.
+- Prune revoked and long-expired shares using a documented retention window so the file and admin response stay bounded.
+- Test read-only roots, unwritable state destinations, interrupted writes, corrupt JSON recovery, restart persistence, migration, and pruning.
+
+## 10. Harden authentication and HTTP trust boundaries
+
+**Status: pending. Priority: high.**
+
+The browser password becomes the admin password when `--admin-password` is omitted, secrets can only be supplied on the command line, comparisons are ordinary string comparisons, and failed authentication has no rate limit. The API also trusts `X-Forwarded-Proto` from any client and accepts an admin JSON body regardless of Content-Type.
+
+- Always generate a separate admin password unless the owner explicitly supplies one. Do not reuse the browser password implicitly.
+- Support `SERVEIT_PASSWORD`, `SERVEIT_ADMIN_PASSWORD`, and restrictive password-file options. Define and test precedence without printing supplied secrets outside the existing startup credential panel.
+- Compare credentials in constant time and add bounded per-client authentication rate limiting for the browser and admin doors. Avoid global sleeps that let one client stall everyone else.
+- Require `application/json` for admin JSON mutations. Add Origin checks for authenticated state-changing browser requests where applicable.
+- Ignore forwarded scheme and host headers by default. Honor them only behind an explicitly configured trusted proxy, then validate their syntax before generating share URLs.
+- Add a Content Security Policy. Use per-response nonces for the existing embedded scripts/styles or move them to dedicated embedded asset routes; do not weaken the policy with unrestricted inline script execution.
+- Add authentication, rate-limit, Content-Type, proxy-spoofing, and CSP tests.
+
+## 11. Correct share activity, countdowns, and admin polling cost
+
+**Status: pending. Priority: medium.**
+
+HEAD requests and every Range request for a shared file currently increment the download counter and rewrite state. The guest and admin countdowns subtract server timestamps from `Date.now()`, so a device with a bad clock can show a valid link as expired. Every 15-second admin poll also regenerates a PNG QR code for every share.
+
+- Define a download as an initial successful GET. Do not count HEAD requests, and prevent video seeking or resume ranges from inflating the counter. Document the chosen resume behavior and test it with multiple Range requests.
+- Send server-derived remaining seconds to both pages. Decrement from that baseline with a monotonic browser timer; refresh the baseline after server activity instead of depending on the wall clock of the phone or computer.
+- Remove QR image generation from the share-list response. Generate or cache a QR only when the user opens its modal, using a small authenticated endpoint.
+- Document that revocation blocks new requests but does not recall bytes already sent on an established transfer. Do not add per-chunk store locking merely to terminate active transfers.
+- Keep the 15-second list refresh lightweight and add tests for counters, Range/HEAD behavior, remaining-time serialization, and lazy QR generation.
+
+## 12. Make releases reproducible, least-privileged, and installable with Go
+
+**Status: pending. Priority: high before the next release.**
+
+`go install github.com/Danakolana/ServeIt@v1.0.2` fails because `go.mod` declares `module lanserve`. The release workflow publishes without first running tests or vet, grants `contents: write` to build jobs, interpolates the manual tag input directly into shell source, and references actions by mutable major-version tags.
+
+- Change the module path to `github.com/Danakolana/ServeIt`, update imports if needed, and verify `go install github.com/Danakolana/ServeIt@<new-tag>` in a clean environment.
+- Add a verification job that runs `go test ./...`, `go vet ./...`, and the supported cross-build matrix before publishing. The release job must depend on it.
+- Give the workflow read-only permissions by default and grant `contents: write` only to the publishing job.
+- Pass manual inputs through environment variables, validate release tags against the intended version format, and ensure a manual release builds the commit identified by that tag.
+- Pin third-party actions to reviewed full commit SHAs with version comments. Include checkout, Go setup, artifact upload/download, and release publishing actions.
+- Test the workflow with a non-publishing pull-request or local workflow check, then publish the next patch release and verify all binaries plus `SHA256SUMS`.
+
+## 13. Reduce filesystem work on large shares and searches
+
+**Status: pending. Priority: medium; benchmark each optimization.**
+
+Path safety currently calls `EvalSymlinks` for ordinary entries repeatedly: listing resolves every entry, share authorization resolves both sides on each check, and ZIP walking can resolve and reauthorize the same descendant several times. `Use` performs filesystem authorization and a state-file rewrite while holding the global store mutex. Abandoned searches continue walking, and ZIP streaming uses the default 32 KiB copy buffer.
+
+- Resolve the served root and selected share roots once. Use `Lstat`/`DirEntry.Type` to take the fast path for ordinary descendants, resolving actual symlinks before allowing them. Preserve the invariant that a symlink cannot escape the served root or its selected share root.
+- Remove filesystem calls and persistence I/O from the share-store critical section. Copy the immutable authorization data under lock, validate outside it, then reacquire and recheck revocation/expiry before recording activity.
+- Check `r.Context()` during search walking and stop promptly when the client disconnects or starts a replacement search.
+- Benchmark a reusable 256 KiB to 1 MiB ZIP copy buffer against the existing 32 KiB behavior for one large file and thousands of small files. Retain it only if throughput improves without material memory growth.
+- Extend the performance probe to report path-resolution calls, concurrent share latency, cancellation delay, allocations, first-byte time, and throughput. Include a real two-device LAN run.
+
+## 14. Introduce a server object and focused security tests
+
+**Status: pending. Priority: medium after tasks 7–13.**
+
+Process-wide roots, passwords, templates, and the share store make tests mutate global state and prevent safe parallel execution. Main/share JavaScript and CSS also duplicate download and listing behavior, increasing the chance that a security or correctness fix reaches only one page.
+
+- Move configuration, canonical root, templates, authentication, and share storage into a `Server` type with methods for handlers. Keep `main` responsible only for flags, construction, startup output, signals, and serving.
+- Parse all templates through one constructor and expose shared embedded CSS/JavaScript from dedicated routes or template components with one implementation of sorting and multi-download behavior.
+- Add table-driven tests for `cleanShareRel`, URL construction, authorization, case variants, backslashes, traversal, symlink boundaries, hidden paths, and state-file aliases. Run independent server instances in parallel where useful.
+- Replace mixed `fmt.Printf`/`log.Printf` handler diagnostics with one injected logger. Preserve concise user-facing startup output.
+- Move user-visible limits such as search results, selected items, ZIP entries, and maximum lifetime into clearly named constants. Keep related validation messages and boundary tests tied to those constants.
+- Treat variable shadowing, `utf8.RuneCountInString`, and terminal-width library choices as cleanup within touched code, not reasons for a standalone refactor.
+
+## 15. Shut down gracefully without cutting off active downloads
+
+**Status: pending. Priority: high.**
+
+The process currently relies on the operating system’s default SIGINT/SIGTERM behavior. Pressing Ctrl+C terminates it immediately, aborting in-progress file and ZIP transfers and providing no opportunity to flush coalesced share activity from task 9.
+
+- Use `signal.NotifyContext` or equivalent handling for SIGINT and SIGTERM. On the first signal, stop accepting new connections and begin `http.Server.Shutdown` while existing requests continue.
+- Allow active downloads to finish without an arbitrary short deadline. A second signal should call `Server.Close` and force an immediate exit so the operator can always stop a stuck transfer.
+- Flush pending share-store activity before the graceful exit completes. Report flush or shutdown errors through the common logger and return a nonzero exit status when appropriate.
+- Print one concise shutdown message stating that active transfers are draining and that a second Ctrl+C forces exit. Do not interleave routine request noise with the startup or shutdown panels.
+- Add an integration test with a deliberately slow streaming response: confirm the first signal rejects new work but lets the active response finish, and confirm a second signal aborts it. Cover SIGTERM and persistence flushing without sending real signals to the main test process.

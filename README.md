@@ -1,124 +1,180 @@
 # ServeIt
 
+**A single-binary LAN file server with searchable browsing and expiring guest links for exactly the files and folders you select.**
+
+[![Latest release](https://img.shields.io/github/v/release/Danakolana/ServeIt?display_name=tag)](https://github.com/Danakolana/ServeIt/releases/latest)
+[![Release build](https://github.com/Danakolana/ServeIt/actions/workflows/release.yml/badge.svg)](https://github.com/Danakolana/ServeIt/actions/workflows/release.yml)
+[![Go 1.24+](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)](https://go.dev/)
+
+![ServeIt startup panel and file browser](docs/startup-and-browser.png)
+
+ServeIt turns a folder into a clean web interface for devices on the same network. Browse and search the full served folder, or create a temporary guest link containing only selected files and directories. There is no runtime, package manager, account system, or installation directory.
+
+## Quick start
+
+### Linux, 64-bit PC
+
 ```bash
-wget -O ServeIt https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-linux-amd64
+curl -fL -o ServeIt https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-linux-amd64
 chmod +x ServeIt
-./ServeIt
+./ServeIt --dir ~/Downloads
 ```
 
-That downloads the latest Linux build for a 64-bit PC and starts it in the current directory. No runtime, no package install.
-
-The same release publishes the other binaries:
+### macOS, Apple silicon
 
 ```bash
-# Linux, 64-bit ARM
-wget -O ServeIt https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-linux-arm64
-
-# macOS, Apple silicon
-wget -O ServeIt https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-macos-arm64
-
-# macOS, Intel
-wget -O ServeIt https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-macos-amd64
-
-# Windows, 64-bit
-wget -O ServeIt.exe https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-windows-amd64.exe
+curl -fL -o ServeIt https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-macos-arm64
+chmod +x ServeIt
+./ServeIt --dir ~/Downloads
 ```
 
-On macOS, `chmod +x ServeIt` and then `./ServeIt`. On Windows, run `ServeIt.exe` from the folder you downloaded. `releases/latest` always points at the newest published tag.
+Intel Mac users should replace `macos-arm64` with `macos-amd64`.
 
-## Releases
+### Windows PowerShell, 64-bit
 
-Publishing a tag is what creates the GitHub release. Pushing a tag named like `v1.2.3` runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which cross-compiles five static binaries and attaches them to that release, plus `SHA256SUMS`. You can also start the same workflow manually from the Actions tab and type the tag name there.
+```powershell
+Invoke-WebRequest -Uri "https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-windows-amd64.exe" -OutFile "ServeIt.exe"
+.\ServeIt.exe --dir "$HOME\Downloads"
+```
 
-| File | System |
+ServeIt prints the address, QR code, authentication state, and admin credentials when it starts. Open the address from another device on the same Wi-Fi or Ethernet network.
+
+> [!CAUTION]
+> The main browser has no password by default and includes dotfiles. Point `--dir` at a dedicated sharing folder instead of your home directory or a source repository. See [Security model](#security-model).
+
+## Latest binaries
+
+Each [GitHub release](https://github.com/Danakolana/ServeIt/releases/latest) contains these static binaries and a `SHA256SUMS` file:
+
+| Download | Platform |
 |---|---|
-| `ServeIt-linux-amd64` | Linux, 64-bit PC |
-| `ServeIt-linux-arm64` | Linux, 64-bit ARM |
-| `ServeIt-macos-amd64` | macOS, Intel |
-| `ServeIt-macos-arm64` | macOS, Apple silicon |
-| `ServeIt-windows-amd64.exe` | Windows, 64-bit |
+| [ServeIt-linux-amd64](https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-linux-amd64) | Linux, Intel/AMD 64-bit |
+| [ServeIt-linux-arm64](https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-linux-arm64) | Linux, ARM64 |
+| [ServeIt-macos-amd64](https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-macos-amd64) | macOS, Intel |
+| [ServeIt-macos-arm64](https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-macos-arm64) | macOS, Apple silicon |
+| [ServeIt-windows-amd64.exe](https://github.com/Danakolana/ServeIt/releases/latest/download/ServeIt-windows-amd64.exe) | Windows, Intel/AMD 64-bit |
+| [SHA256SUMS](https://github.com/Danakolana/ServeIt/releases/latest/download/SHA256SUMS) | SHA-256 checksums for all binaries |
+
+To verify the Linux 64-bit download above:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+curl -fLO https://github.com/Danakolana/ServeIt/releases/latest/download/SHA256SUMS
+expected="$(awk '$2 == "ServeIt-linux-amd64" {print $1}' SHA256SUMS)"
+printf '%s  ServeIt\n' "$expected" | sha256sum -c -
 ```
 
-The workflow needs no extra secrets. `contents: write` on the tag workflow is enough to publish the release.
+On macOS, use `shasum -a 256 -c -` in place of `sha256sum -c -` and select the checksum for your macOS asset.
 
-## What it is
+## Highlights
 
-The folder on this machine is already a link. Open it from a phone, a laptop on the same network, or hand a guest only the files you picked.
+- **Selective guest sharing.** Check individual files and folders in the admin page. A guest link cannot browse unchecked siblings or the rest of the served tree.
+- **Expiring links.** Every link has an idle timeout and a hard maximum lifetime of 24 hours. View and download counts are visible to the administrator, and links can be revoked.
+- **Streamed multi-file downloads.** Select several files or folders and receive one stored ZIP. File bytes are read as they are sent instead of buffering the entire archive in memory.
+- **Recursive live search.** Search the served tree from the browser, with results capped at 200 matches.
+- **One small binary.** Current release binaries are roughly 8–9 MB and contain the UI, search, authentication, QR generation, and server.
+- **QR codes where they help.** Startup QR codes open the file browser; every guest link has its own QR code in the admin page.
 
-![Terminal and file browser](docs/startup-and-browser.png)
+![ServeIt admin panel](docs/admin.png)
 
-![Admin panel](docs/admin.png)
+![A selective guest link](docs/share.png)
 
-![Shared link](docs/share.png)
-
-ServeIt is a LAN file server. Point it at any directory, hand someone a link or a QR code, and keep the rest of the disk private.
-
-Most one-command file servers publish the whole tree and stop there. You install a language runtime, pull a package, and everyone who can open the port can walk every subdirectory.
-
-ServeIt is the opposite shape:
-
-- **One file.** The UI, search, auth, and QR codes are compiled in. A release binary is one static file, about **13 MB**. There is no Node, Python, or package directory beside it.
-- **Any path, not only the shell’s current directory.** `--dir` is the served root. Everything else is a flag.
-- **A real guest boundary.** The admin panel lets you check individual files and folders, including a slice of a subdirectory. Unchecked siblings never appear on the guest link.
-- **Links that expire.** Idle timeout plus a hard maximum of 24 hours. Page views and downloads are counted. You can revoke a link immediately.
-
-## Run it
-
-```bash
-./ServeIt --dir /data/drop --port 9000
-./ServeIt --dir ~/Videos --port 8080 --password guest --admin-password owner
-```
-
-On Windows the program name is `ServeIt.exe`. The flags are the same.
-
-On startup, after the port is open, one panel lists the directory, port, file-browser auth, admin user, admin password, and how to stop (`Ctrl+C`). QR codes are printed for `192.168.x.x` addresses only. If another address was skipped, the panel says so in one line. With no `192.168` address, the panel falls back to `127.0.0.1`. The password is only in that panel.
-
-| Flag | Default | What it does |
-|---|---|---|
-| `--dir` | `.` | Directory to publish. Absolute or relative. This is the only root guests and the file browser can see. |
-| `--port` | `8080` | TCP port. The process listens on all interfaces. |
-| `--password` | empty | Basic-auth password for the main browser and search. Username is always `admin`. Empty means the file browser is open on the LAN. |
-| `--admin-password` | generated | Password for `/admin`. Username is `admin`. If omitted, ServeIt reuses `--password`. If both are empty, it prints a random admin password. |
+## Run and configure
 
 ```bash
 ./ServeIt
 ./ServeIt --dir /home/user/files --port 9000
-./ServeIt --dir /data --port 8888 --password hunter2 --admin-password separate-secret
+./ServeIt --dir /data --port 8888 --password guest --admin-password separate-secret
 ```
 
-## What you get
+On Windows, use `ServeIt.exe`; the flags are the same.
 
-**File browser.** Breadcrumbs, a sortable listing, and click-to-download for any file under `--dir`. Select several rows and download them as one stored zip. A selected folder is packed with its contents, and the bar shows the count and size before the transfer starts. The zip is streamed, so a multi-gigabyte selection is not loaded into memory.
+| Flag | Default | Purpose |
+|---|---|---|
+| `--dir` | `.` | Root directory exposed by the main browser. Guest links remain limited to their selected items. |
+| `--port` | `8080` | TCP port. ServeIt currently listens on all IPv4 interfaces. |
+| `--password` | empty | Basic-auth password for the main browser and search. The username is `admin`. Empty means open access on the LAN. |
+| `--admin-password` | see description | Password for `/admin`, with username `admin`. If omitted, ServeIt reuses `--password`; if both are empty, it generates and prints a random password. |
 
-**Search.** Live search across files and subfolders, capped at 200 hits.
+Startup QR codes are generated only for `192.168.x.x` addresses. Docker, VM, link-local, and other interface ranges are skipped to reduce the chance of scanning an unusable address. If no `192.168` address exists, ServeIt displays `127.0.0.1` for local access.
 
-**Admin** at `/admin`. Browse the same tree, check the rows you want, and create a temporary link. A checked folder includes its descendants. A checked file is only that file. Selection stays in the browser while you move between folders, so a share can mix paths from different places.
-
-**Guest page** at `/s/<token>`. The guest can list and download only the selection. Each view or download restarts the idle timer. The link still dies at the maximum lifetime, which cannot exceed 24 hours.
-
-**QR codes.** One in the admin panel for each share link, and startup QR codes in the terminal for the server addresses.
-
-**State.** Shares live in `.lanserve-shares.json` under the served root. That file is hidden from browsing, search, and guest links.
-
-## Share a slice of a folder
+## Share only part of a folder
 
 1. Open `http://<lan-address>:<port>/admin` and sign in as `admin`.
-2. Walk into the subdirectory. Check only the files or child folders that should leave the machine.
-3. Set idle timeout and maximum lifetime, then create the link.
-4. Copy the URL or show the QR code. Revoke it from the same page when you are done.
+2. Browse to the relevant directory and check the files or child folders to share.
+3. Choose the idle timeout and maximum lifetime, then create the link.
+4. Copy the URL or show its QR code. Revoke the link when it is no longer needed.
 
-The main browser and a guest link are different doors. `--password` locks the full tree. A share link does not unlock anything outside its selection, and it does not require the file-browser password.
+The main browser and guest links are separate access paths. `--password` protects the complete tree under `--dir`. A guest URL is a capability link that exposes only its recorded selection and does not require the main-browser password.
 
-ServeIt listens over plain HTTP by default. Basic-auth passwords, share URLs, and file contents can be observed by someone who can inspect traffic on the network. Use it on a trusted LAN; for untrusted networks, put it behind an HTTPS reverse proxy or tunnel.
+Good fits include:
+
+- Sharing selected photos with family on the same Wi-Fi without publishing the rest of the photo library.
+- Giving a colleague temporary read-only access to one project folder on a trusted office LAN.
+- Distributing meeting, classroom, or workshop files without creating accounts or installing a cloud client.
+
+## Why ServeIt?
+
+ServeIt focuses on temporary, selective, read-only sharing. Other tools may be a better fit when you need uploads, WebDAV, permanent user accounts, or public Internet hosting.
+
+| Tool | Setup and access model | Best fit |
+|---|---|---|
+| **ServeIt** | One binary; full local browser plus expiring links for selected files and folders | Temporary selective sharing on a trusted LAN |
+| `python -m http.server` | Requires Python; exposes the selected root without guest-link isolation | A quick, unrestricted directory listing |
+| `npx serve` | Requires Node/npm; serves a directory as a static site | Local web development and static-site previews |
+| miniserve / dufs | Single-binary general file servers with broader transfer features, depending on the tool | Uploads, WebDAV, or general-purpose file serving |
+| File Browser | Persistent service with users, permissions, uploads, and configuration | Ongoing browser-based file management |
+
+## Security model
+
+ServeIt is intended for a trusted local network. It is not hardened for direct exposure to the public Internet.
+
+- **HTTP is unencrypted.** Basic authentication controls access but does not encrypt passwords, share URLs, or files in transit. Use an HTTPS reverse proxy or tunnel if the network is not trusted.
+- **The main browser exposes the whole configured root.** With no `--password`, anyone who can reach the server can browse and download it. Dotfiles are currently included, so use a dedicated directory.
+- **Guest links are the isolation boundary.** A guest can access only the files and folder descendants selected when the link was created. Anyone who obtains the URL can use it until it expires or is revoked.
+- **Admin credentials matter.** If `--admin-password` is omitted while `--password` is set, the same password protects both areas. Pass a separate admin password when the main-browser password is shared with other people.
+- **Share state is reserved.** Temporary-link metadata is stored in `.lanserve-shares.json` under the served root. ServeIt hides that file from normal browsing, search, guest links, and ZIP downloads.
+
+Security-default improvements are tracked in the [roadmap](BACKLOG.md). If you discover a vulnerability, avoid including secrets or private share URLs in a public issue.
+
+## Troubleshooting
+
+### Another device cannot connect
+
+- Confirm both devices are on the same LAN and not separated by guest-Wi-Fi isolation, a VPN, or a VLAN.
+- Allow ServeIt through the host firewall on private networks. Windows may show this prompt on first launch.
+- Use the printed `192.168.x.x` URL. A `127.0.0.1` address works only on the computer running ServeIt.
+
+### The expected QR code is missing
+
+ServeIt intentionally prints QR codes only for `192.168.0.0/16`. Addresses belonging to Docker, virtual machines, link-local interfaces, and other ranges are skipped. On networks using another private range, type the usable address manually; broader address discovery is on the roadmap.
+
+### macOS blocks the binary
+
+After verifying the checksum, open **System Settings → Privacy & Security** and allow the application. If the downloaded file still carries a quarantine attribute, remove it explicitly:
+
+```bash
+xattr -d com.apple.quarantine ./ServeIt
+```
+
+### Windows SmartScreen appears
+
+Verify the downloaded binary against `SHA256SUMS`. If it matches the GitHub release, choose **More info → Run anyway**. The project does not currently distribute a code-signed Windows executable.
 
 ## Build from source
 
+Go 1.24 or newer is required.
+
 ```bash
+git clone https://github.com/Danakolana/ServeIt.git
+cd ServeIt
+go test ./...
 go build -o ServeIt .
 ```
 
-Go 1.24 or newer. The HTML pages are embedded with `//go:embed`, so the binary does not need `tmpl.html`, `admin.html`, or `share.html` next to it at runtime. Cross-compiles use the same command with `GOOS` and `GOARCH`; the release workflow is the version of that command that publishes all five targets.
+The HTML pages are embedded with `//go:embed`, so the built executable does not need template files beside it.
+
+## Contributing and roadmap
+
+The detailed development plan is in [BACKLOG.md](BACKLOG.md). Bug reports and focused feature proposals are welcome in [GitHub Issues](https://github.com/Danakolana/ServeIt/issues).
+
+Release maintainers should follow [RELEASING.md](RELEASING.md).
