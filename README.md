@@ -3,6 +3,7 @@
 **A single-binary LAN file server with searchable browsing and expiring guest links for exactly the files and folders you select.**
 
 [![Latest release](https://img.shields.io/github/v/release/Danakolana/ServeIt?display_name=tag)](https://github.com/Danakolana/ServeIt/releases/latest)
+[![CI](https://github.com/Danakolana/ServeIt/actions/workflows/ci.yml/badge.svg)](https://github.com/Danakolana/ServeIt/actions/workflows/ci.yml)
 [![Release build](https://github.com/Danakolana/ServeIt/actions/workflows/release.yml/badge.svg)](https://github.com/Danakolana/ServeIt/actions/workflows/release.yml)
 [![Go 1.24+](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)](https://go.dev/)
 

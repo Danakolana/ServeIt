@@ -282,6 +282,91 @@ func TestAllUITemplateSetsParseAndRender(t *testing.T) {
 	}
 }
 
+func TestSharedTemplatesRenderServerCountdownBaseline(t *testing.T) {
+	if err := initTemplates(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/s/token/", nil)
+	data := SharedPageData{
+		Token:                "token",
+		CurrentPath:          "Shared items",
+		Parents:              []Crumb{{Name: "shared items", Path: ""}},
+		RemainingSeconds:     37,
+		HardRemainingSeconds: 91,
+		IdleTimeoutMinutes:   15,
+		ThemeSwitchURL:       themeSwitchURL(request),
+		ThemeOptions:         themeOptions(request),
+	}
+	for theme, views := range uiTemplates {
+		var output bytes.Buffer
+		if err := views.share.Execute(&output, data); err != nil {
+			t.Fatalf("render %s share UI: %v", theme, err)
+		}
+		if !strings.Contains(output.String(), `data-left="37"`) || !strings.Contains(output.String(), `data-hard="91"`) {
+			t.Fatalf("%s share UI did not serialize server countdown baseline: %s", theme, output.String())
+		}
+	}
+}
+
+func TestCleanShareRelAndAuthorizationBoundaries(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		raw        string
+		allowEmpty bool
+		want       string
+		wantErr    bool
+	}{
+		{name: "empty allowed", raw: "", allowEmpty: true},
+		{name: "dot allowed", raw: ".", allowEmpty: true},
+		{name: "backslashes normalized", raw: `docs\\readme.txt`, want: "docs/readme.txt"},
+		{name: "duplicate separators cleaned", raw: "docs//nested/./file.txt", want: "docs/nested/file.txt"},
+		{name: "parent traversal", raw: "../secret", wantErr: true},
+		{name: "absolute path", raw: "/etc/passwd", wantErr: true},
+		{name: "nested traversal", raw: "docs/../../secret", wantErr: true},
+		{name: "empty rejected", raw: "", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := cleanShareRel(test.raw, test.allowEmpty)
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("cleanShareRel(%q) accepted invalid path as %q", test.raw, got)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("cleanShareRel(%q) = %q, %v; want %q", test.raw, got, err, test.want)
+			}
+		})
+	}
+
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs", "readme.txt"), []byte("readme"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "private.txt"), []byte("private"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	restoreRoot(t, dir)
+	shared := Share{Items: []ShareItem{{Path: "docs", IsDir: true}}}
+	for _, test := range []struct {
+		rel  string
+		want bool
+	}{
+		{rel: "docs", want: true},
+		{rel: "docs/readme.txt", want: true},
+		{rel: "private.txt", want: false},
+		{rel: "../private.txt", want: false},
+		{rel: ".hidden", want: false},
+	} {
+		if got := shareAllows(&shared, test.rel); got != test.want {
+			t.Errorf("shareAllows(%q) = %v, want %v", test.rel, got, test.want)
+		}
+	}
+}
+
 func TestUIRoutesArePublicAndReadOnly(t *testing.T) {
 	mux := http.NewServeMux()
 	if err := registerUIRoutes(mux); err != nil {

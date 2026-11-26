@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -92,13 +93,15 @@ const (
 // ─── globals ─────────────────────────────────────────────────────────────────
 
 var (
-	root             string
-	password         string
-	showHidden       bool
-	allowedHosts     map[string]struct{}
-	serverAddress    string
-	searchSlots      = make(chan struct{}, maxConcurrentSearches)
-	authLimiterStore = newAuthLimiter()
+	root               string
+	password           string
+	showHidden         bool
+	allowedHosts       map[string]struct{}
+	serverAddress      string
+	searchSlots        = make(chan struct{}, maxConcurrentSearches)
+	authLimiterStore   = newAuthLimiter()
+	performanceMetrics atomic.Bool
+	secureResolveCount atomic.Uint64
 )
 
 type authLimiter struct {

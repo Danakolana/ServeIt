@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 )
@@ -21,6 +23,8 @@ func TestPerformanceProbe(t *testing.T) {
 	}
 	dir := t.TempDir()
 	restoreRoot(t, dir)
+	performanceMetrics.Store(true)
+	t.Cleanup(func() { performanceMetrics.Store(false) })
 	small := filepath.Join(dir, "small")
 	if err := os.Mkdir(small, 0755); err != nil {
 		t.Fatal(err)
@@ -46,6 +50,7 @@ func TestPerformanceProbe(t *testing.T) {
 			runtime.ReadMemStats(&before)
 			start := time.Now()
 			requests := 0
+			resolvesBefore := secureResolveCount.Load()
 			checkReq, err := http.NewRequest("POST", server.URL+"?check=1", bytes.NewBufferString(tc.body))
 			if err != nil {
 				t.Fatal(err)
@@ -90,8 +95,50 @@ func TestPerformanceProbe(t *testing.T) {
 			}
 			resp.Body.Close()
 			total := time.Since(start)
+			resolves := secureResolveCount.Load() - resolvesBefore
 			runtime.ReadMemStats(&after)
-			t.Logf("%s run=%d requests=%d check=%s first_byte=%s total=%s bytes=%d throughput=%.1f MiB/s heap_delta=%d total_alloc_delta=%d first_read=%d", tc.name, i+1, requests, checkDone.Sub(start), firstByte, total, copied+int64(n), float64(copied+int64(n))/1048576/total.Seconds(), int64(after.HeapAlloc)-int64(before.HeapAlloc), after.TotalAlloc-before.TotalAlloc, n)
+			cancelled := httptest.NewRequest(http.MethodGet, "/search?q=cancel", nil).WithContext(context.Background())
+			cancelledContext, cancel := context.WithCancel(cancelled.Context())
+			cancel()
+			cancelled = cancelled.WithContext(cancelledContext)
+			cancelStart := time.Now()
+			cancelledRecorder := httptest.NewRecorder()
+			searchHandler(cancelledRecorder, cancelled)
+			cancelDelay := time.Since(cancelStart)
+			shareLatency := benchmarkShareTouchLatency(t, dir, i)
+			t.Logf("%s run=%d requests=%d check=%s first_byte=%s total=%s bytes=%d throughput=%.1f MiB/s heap_delta=%d total_alloc_delta=%d resolve_calls=%d cancellation_delay=%s share_touch=%s first_read=%d", tc.name, i+1, requests, checkDone.Sub(start), firstByte, total, copied+int64(n), float64(copied+int64(n))/1048576/total.Seconds(), int64(after.HeapAlloc)-int64(before.HeapAlloc), after.TotalAlloc-before.TotalAlloc, resolves, cancelDelay, shareLatency, n)
 		}
 	}
+}
+
+func benchmarkShareTouchLatency(t *testing.T, dir string, run int) time.Duration {
+	store := &ShareStore{
+		path: filepath.Join(dir, fmt.Sprintf("share-benchmark-%d.json", run)),
+		shares: []*Share{{
+			Token:              "benchmark-token",
+			IdleTimeoutMinutes: 10,
+			ExpiresAt:          time.Now().Add(time.Hour),
+			HardExpiresAt:      time.Now().Add(2 * time.Hour),
+		}},
+	}
+	const workers, touchesPerWorker = 8, 16
+	start := time.Now()
+	var group sync.WaitGroup
+	group.Add(workers)
+	for worker := 0; worker < workers; worker++ {
+		go func() {
+			defer group.Done()
+			for i := 0; i < touchesPerWorker; i++ {
+				if _, err := store.Touch("benchmark-token", "", false); err != nil {
+					t.Errorf("share benchmark touch: %v", err)
+					return
+				}
+			}
+		}()
+	}
+	group.Wait()
+	if err := store.Flush(); err != nil {
+		t.Fatalf("share benchmark flush: %v", err)
+	}
+	return time.Since(start) / (workers * touchesPerWorker)
 }

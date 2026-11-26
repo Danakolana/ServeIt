@@ -594,6 +594,9 @@ func cleanShareRel(raw string, allowEmpty bool) (string, error) {
 }
 
 func secureResolve(rel string) (string, error) {
+	if performanceMetrics.Load() {
+		secureResolveCount.Add(1)
+	}
 	abs := filepath.Join(root, filepath.FromSlash(rel))
 	real, err := filepath.EvalSymlinks(abs)
 	if err != nil {

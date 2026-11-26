@@ -135,19 +135,19 @@ The browser and admin doors now support separate credentials, constant-time chec
 
 ## 11. Correct share activity, countdowns, and admin polling cost
 
-**Status: download counting, server baselines, and lazy QR generation implemented; broader activity tests remain. Priority: medium.**
+**Status: download counting, server baselines, lazy QR generation, conditional polling, and focused activity tests implemented. Priority: medium.**
 
 Download counters now exclude HEAD and Range requests, countdowns use server-provided baselines, and QR generation is lazy. Broader activity tests and lighter polling remain.
 
 - Define a download as an initial successful GET. Do not count HEAD requests, and prevent video seeking or resume ranges from inflating the counter. Document the chosen resume behavior and test it with multiple Range requests. **Implemented for successful non-Range GETs; HEAD and Range requests are not counted.**
-- Send server-derived remaining seconds to both pages. Decrement from that baseline with a monotonic browser timer; refresh the baseline after server activity instead of depending on the wall clock of the phone or computer.
+- Send server-derived remaining seconds to both pages. Decrement from that baseline with a monotonic browser timer; refresh the baseline after server activity instead of depending on the wall clock of the phone or computer. **Implemented and covered by template serialization tests.**
 - Remove QR image generation from the share-list response. Generate or cache a QR only when the user opens its modal, using a small authenticated endpoint. **Implemented.**
-- Document that revocation blocks new requests but does not recall bytes already sent on an established transfer. Do not add per-chunk store locking merely to terminate active transfers.
-- Keep the 15-second list refresh lightweight and add tests for counters, Range/HEAD behavior, remaining-time serialization, and lazy QR generation. **Conditional ETags now make unchanged polling return 304; counter and lazy-QR tests are covered.**
+- Document that revocation blocks new requests but does not recall bytes already sent on an established transfer. Do not add per-chunk store locking merely to terminate active transfers. **Documented in the security model.**
+- Keep the 15-second list refresh lightweight and add tests for counters, Range/HEAD behavior, remaining-time serialization, and lazy QR generation. **Conditional ETags now make unchanged polling return 304; counter, countdown, and lazy-QR tests are covered.**
 
 ## 12. Make releases reproducible, least-privileged, and installable with Go
 
-**Status: release workflow hardened; install and publishing verification remain. Priority: high before the next release.**
+**Status: release workflow hardened and CI verification added; install and publishing verification remain. Priority: high before the next release.**
 
 The module path now matches the GitHub repository. The release workflow still needs hardening: it publishes without first running tests or vet, grants `contents: write` to build jobs, interpolates the manual tag input directly into shell source, and references actions by mutable major-version tags.
 
@@ -156,11 +156,11 @@ The module path now matches the GitHub repository. The release workflow still ne
 - Give the workflow read-only permissions by default and grant `contents: write` only to the publishing job. **Implemented.**
 - Pass manual inputs through environment variables, validate release tags against the intended version format, and ensure a manual release builds the commit identified by that tag. **Implemented.**
 - Pin third-party actions to reviewed full commit SHAs with version comments. Include checkout, Go setup, artifact upload/download, and release publishing actions. **Implemented.**
-- Test the workflow with a non-publishing pull-request or local workflow check, then publish the next patch release and verify all binaries plus `SHA256SUMS`.
+- Test the workflow with a non-publishing pull-request or local workflow check, then publish the next patch release and verify all binaries plus `SHA256SUMS`. **Added a read-only pull-request/push CI workflow with test, race, vet, build, and cross-build jobs.**
 
 ## 13. Reduce filesystem work on large shares and searches
 
-**Status: search cancellation, pooled ZIP buffering, and lock-light share authorization implemented; benchmark coverage remains. Priority: medium.**
+**Status: search cancellation, pooled ZIP buffering, lock-light share authorization, and benchmark instrumentation implemented; physical LAN coverage remains. Priority: medium.**
 
 Path safety still calls `EvalSymlinks` repeatedly for ordinary entries, and ZIP walking can resolve the same descendant several times. Share activity authorization and persistence now use a versioned lock-light update, searches stop on cancellation, and ZIP streaming uses a pooled copy buffer. Path-resolution caching and benchmark coverage remain.
 
@@ -168,17 +168,17 @@ Path safety still calls `EvalSymlinks` repeatedly for ordinary entries, and ZIP 
 - Remove filesystem calls and persistence I/O from the share-store critical section. Copy the immutable authorization data under lock, validate outside it, then reacquire and recheck revocation/expiry before recording activity. **Implemented with versioned optimistic updates and serialized state writes.**
 - Check `r.Context()` during search walking and stop promptly when the client disconnects or starts a replacement search. **Implemented.**
 - Benchmark a reusable 256 KiB to 1 MiB ZIP copy buffer against the existing 32 KiB behavior for one large file and thousands of small files. Retain it only if throughput improves without material memory growth. **Implemented with a pooled 256 KiB buffer; benchmark coverage remains.**
-- Extend the performance probe to report path-resolution calls, concurrent share latency, cancellation delay, allocations, first-byte time, and throughput. Include a real two-device LAN run.
+- Extend the performance probe to report path-resolution calls, concurrent share latency, cancellation delay, allocations, first-byte time, and throughput. Include a real two-device LAN run. **The probe now reports all listed local metrics; the two-device LAN run still requires another device.**
 
 ## 14. Introduce a server object and focused security tests
 
-**Status: named limits and logger consistency improved; Server refactor remains. Priority: medium after tasks 7–13.**
+**Status: named limits, logger consistency, and focused boundary tests improved; Server refactor remains. Priority: medium after tasks 7–13.**
 
 Process-wide roots, passwords, templates, and the share store make tests mutate global state and prevent safe parallel execution. Main/share JavaScript and CSS also duplicate download and listing behavior, increasing the chance that a security or correctness fix reaches only one page.
 
 - Move configuration, canonical root, templates, authentication, and share storage into a `Server` type with methods for handlers. Keep `main` responsible only for flags, construction, startup output, signals, and serving.
 - Parse all templates through one constructor and expose shared embedded CSS/JavaScript from dedicated routes or template components with one implementation of sorting and multi-download behavior.
-- Add table-driven tests for `cleanShareRel`, URL construction, authorization, case variants, backslashes, traversal, symlink boundaries, hidden paths, and state-file aliases. Run independent server instances in parallel where useful.
+- Add table-driven tests for `cleanShareRel`, URL construction, authorization, case variants, backslashes, traversal, symlink boundaries, hidden paths, and state-file aliases. Run independent server instances in parallel where useful. **Added path and share-authorization boundary tables; Host, hidden-path, URL, symlink, and state-alias coverage is also present.**
 - Replace mixed `fmt.Printf`/`log.Printf` handler diagnostics with one injected logger. Preserve concise user-facing startup output. **Touched handler diagnostics now use `log.Printf`.**
 - Move user-visible limits such as search results, selected items, ZIP entries, and maximum lifetime into clearly named constants. Keep related validation messages and boundary tests tied to those constants. **Share limits are now named constants.**
 - Treat variable shadowing, `utf8.RuneCountInString`, and terminal-width library choices as cleanup within touched code, not reasons for a standalone refactor.
