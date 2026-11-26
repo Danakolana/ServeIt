@@ -14,7 +14,7 @@ function toast(m,bad){let e=$('#toast');if(!e){e=document.createElement('div');e
 async function copy(s){
  if(!s)throw new Error('Copy failed');
  if(navigator.clipboard&&window.isSecureContext){try{await navigator.clipboard.writeText(s);return}catch{}}
- const previous=document.activeElement,a=document.createElement('textarea');a.value=s;a.setAttribute('readonly','');a.setAttribute('aria-hidden','true');a.style.cssText='position:fixed;top:0;left:-9999px;width:1px;height:1px;opacity:.01;pointer-events:none';document.body.append(a);a.focus();a.select();a.setSelectionRange(0,s.length);
+ const previous=document.activeElement,dialog=document.querySelector('dialog[open]'),container=dialog||document.body,a=document.createElement('textarea');a.value=s;a.setAttribute('readonly','');a.setAttribute('aria-hidden','true');a.style.cssText=`position:fixed;top:0;left:${dialog?'0':'-9999px'};width:1px;height:1px;opacity:.01;pointer-events:none`;container.append(a);a.focus();a.select();a.setSelectionRange(0,s.length);
  let ok=false;try{ok=document.execCommand('copy')}catch{}a.remove();if(previous&&typeof previous.focus==='function')previous.focus();if(!ok)throw new Error('Copy failed')
 }
 async function zip(url,paths,st){
