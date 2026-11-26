@@ -283,6 +283,12 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 func sharesCollectionHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		etag := fmt.Sprintf(`"shares-%d"`, shareStore.Version())
+		w.Header().Set("ETag", etag)
+		if strings.TrimSpace(r.Header.Get("If-None-Match")) == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 		list := shareStore.Snapshot()
 		views := make([]ShareAdminView, 0, len(list))
 		for _, item := range list {
@@ -754,6 +760,12 @@ func (store *ShareStore) Snapshot() []Share {
 		result[i].Items = append([]ShareItem(nil), item.Items...)
 	}
 	return result
+}
+
+func (store *ShareStore) Version() uint64 {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.version
 }
 
 func (store *ShareStore) GetActive(token string) (Share, error) {

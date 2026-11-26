@@ -62,6 +62,13 @@ jobs:
         run: go test ./...
       - name: Vet
         run: go vet ./...
+      - name: Verify go install from the release tag
+        env:
+          GOBIN: ${{ runner.temp }}/serveit-bin
+        run: |
+          mkdir -p "$GOBIN"
+          go install github.com/Danakolana/ServeIt@${{ needs.meta.outputs.tag }}
+          test -x "$GOBIN/ServeIt"
 
   build:
     name: ${{ matrix.asset }}

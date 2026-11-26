@@ -143,7 +143,7 @@ Download counters now exclude HEAD and Range requests, countdowns use server-pro
 - Send server-derived remaining seconds to both pages. Decrement from that baseline with a monotonic browser timer; refresh the baseline after server activity instead of depending on the wall clock of the phone or computer.
 - Remove QR image generation from the share-list response. Generate or cache a QR only when the user opens its modal, using a small authenticated endpoint. **Implemented.**
 - Document that revocation blocks new requests but does not recall bytes already sent on an established transfer. Do not add per-chunk store locking merely to terminate active transfers.
-- Keep the 15-second list refresh lightweight and add tests for counters, Range/HEAD behavior, remaining-time serialization, and lazy QR generation.
+- Keep the 15-second list refresh lightweight and add tests for counters, Range/HEAD behavior, remaining-time serialization, and lazy QR generation. **Conditional ETags now make unchanged polling return 304; counter and lazy-QR tests are covered.**
 
 ## 12. Make releases reproducible, least-privileged, and installable with Go
 
@@ -151,7 +151,7 @@ Download counters now exclude HEAD and Range requests, countdowns use server-pro
 
 The module path now matches the GitHub repository. The release workflow still needs hardening: it publishes without first running tests or vet, grants `contents: write` to build jobs, interpolates the manual tag input directly into shell source, and references actions by mutable major-version tags.
 
-- Verify `go install github.com/Danakolana/ServeIt@<new-tag>` in a clean environment.
+- Verify `go install github.com/Danakolana/ServeIt@<new-tag>` in a clean environment. **Added to the release verification job.**
 - Add a verification job that runs `go test ./...`, `go vet ./...`, and the supported cross-build matrix before publishing. The release job must depend on it. **Test and vet verification implemented; cross-build verification remains in the build matrix.**
 - Give the workflow read-only permissions by default and grant `contents: write` only to the publishing job. **Implemented.**
 - Pass manual inputs through environment variables, validate release tags against the intended version format, and ensure a manual release builds the commit identified by that tag. **Implemented.**

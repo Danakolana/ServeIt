@@ -131,6 +131,25 @@ func TestShareStorePrunesRetainedHistory(t *testing.T) {
 	}
 }
 
+func TestShareListUsesConditionalPolling(t *testing.T) {
+	previousStore, previousBase := shareStore, publicBaseURL
+	shareStore = &ShareStore{shares: []*Share{{ID: "id", Token: "token", ExpiresAt: time.Now().Add(time.Hour), HardExpiresAt: time.Now().Add(2 * time.Hour)}}}
+	publicBaseURL = "http://127.0.0.1:8080"
+	t.Cleanup(func() { shareStore, publicBaseURL = previousStore, previousBase })
+	first := httptest.NewRecorder()
+	sharesCollectionHandler(first, httptest.NewRequest(http.MethodGet, "/api/admin/shares", nil))
+	if first.Code != http.StatusOK || first.Header().Get("ETag") == "" {
+		t.Fatalf("first list status=%d etag=%q", first.Code, first.Header().Get("ETag"))
+	}
+	secondRequest := httptest.NewRequest(http.MethodGet, "/api/admin/shares", nil)
+	secondRequest.Header.Set("If-None-Match", first.Header().Get("ETag"))
+	second := httptest.NewRecorder()
+	sharesCollectionHandler(second, secondRequest)
+	if second.Code != http.StatusNotModified {
+		t.Fatalf("conditional list status=%d body=%q", second.Code, second.Body.String())
+	}
+}
+
 func TestServeWithSignalChannelStopsCleanly(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
