@@ -53,7 +53,6 @@ type SearchResult struct {
 }
 
 const (
-	minSearchQueryLength  = 2
 	maxSearchResults      = 200
 	maxConcurrentSearches = 4
 )
@@ -239,7 +238,7 @@ func breadcrumbs(rel string) []Crumb {
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
-	if len([]rune(q)) < minSearchQueryLength {
+	if q == "" {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode([]SearchResult{})
 		return

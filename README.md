@@ -110,7 +110,7 @@ Startup QR codes are generated only for `192.168.x.x` addresses. Docker, VM, lin
 
 When `--public-url` is set, it is used instead of request headers, so a forged `Host` or `X-Forwarded-Proto` header cannot change generated links.
 
-Search requires at least two characters and limits concurrent filesystem walks. ZIP downloads are capped at 100,000 entries or 10 GiB per request.
+Search walks are cancellable and limited to four concurrent filesystem walks, with results capped at 200 matches. ZIP downloads are capped at 100,000 entries or 10 GiB per request.
 
 ## Share only part of a folder
 

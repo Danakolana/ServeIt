@@ -38,13 +38,17 @@ func downloadHandler(w http.ResponseWriter, r *http.Request) {
 		writeShareError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
+	if r.URL.Query().Get("check") == "1" {
+		if err := validateDownloadPaths(paths, nil); err != nil {
+			writeShareError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeShareJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
 	entries, total, err := collectZipEntries(paths, nil)
 	if err != nil {
 		writeShareError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if r.URL.Query().Get("check") == "1" {
-		writeShareJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
 	if r.URL.Query().Get("plan") == "1" {
@@ -73,13 +77,17 @@ func shareDownloadHandler(w http.ResponseWriter, r *http.Request, token string) 
 	allow := func(rel string) bool {
 		return shareAllows(&shared, rel)
 	}
+	if r.URL.Query().Get("check") == "1" {
+		if err := validateDownloadPaths(paths, allow); err != nil {
+			writeShareError(w, downloadErrorStatus(err), err.Error())
+			return
+		}
+		writeShareJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
 	entries, total, err := collectZipEntries(paths, allow)
 	if err != nil {
 		writeShareError(w, downloadErrorStatus(err), err.Error())
-		return
-	}
-	if r.URL.Query().Get("check") == "1" {
-		writeShareJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
 	if r.URL.Query().Get("plan") == "1" {
