@@ -140,7 +140,7 @@ createButton.addEventListener('click', async function(){
   try {
     var response = await fetch(apiBase + '/api/admin/shares', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','X-ServeIt-Request':'admin'},
       body:JSON.stringify({items:items,idleTimeoutMinutes:idle,maxLifetimeMinutes:maximum})
     });
     var result = await response.json();
@@ -219,7 +219,7 @@ document.getElementById('share-list').addEventListener('click', async function(e
   }
   if (button.classList.contains('revoke')) {
     if (!confirm('Revoke this share link now?')) return;
-    var response = await fetch(apiBase + '/api/admin/shares/' + encodeURIComponent(button.dataset.id), {method:'DELETE'});
+    var response = await fetch(apiBase + '/api/admin/shares/' + encodeURIComponent(button.dataset.id), {method:'DELETE',headers:{'X-ServeIt-Request':'admin'}});
     if (response.ok) await loadShares();
   }
 });

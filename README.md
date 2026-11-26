@@ -104,8 +104,13 @@ On Windows, use `ServeIt.exe`; the flags are the same.
 | `--port` | `8080` | TCP port. ServeIt currently listens on all IPv4 interfaces. |
 | `--password` | empty | Basic-auth password for the main browser and search. The username is `admin`. Empty means open access on the LAN. |
 | `--admin-password` | see description | Password for `/admin`, with username `admin`. If omitted, ServeIt reuses `--password`; if both are empty, it generates and prints a random password. |
+| `--public-url` | auto-detected LAN URL | Canonical `http://` or `https://` origin used in guest links and QR codes. Set this when ServeIt is behind a reverse proxy. |
 
-Startup QR codes are generated only for `192.168.x.x` addresses. Docker, VM, link-local, and other interface ranges are skipped to reduce the chance of scanning an unusable address. If no `192.168` address exists, ServeIt displays `127.0.0.1` for local access.
+Startup QR codes are generated only for `192.168.x.x` addresses. Docker, VM, link-local, and other interface ranges are skipped to reduce the chance of scanning an unusable address. If no `192.168` address exists, ServeIt displays `127.0.0.1` for local access. Guest-link QR codes use `--public-url` when it is configured.
+
+When `--public-url` is set, it is used instead of request headers, so a forged `Host` or `X-Forwarded-Proto` header cannot change generated links.
+
+Search requires at least two characters and limits concurrent filesystem walks. ZIP downloads are capped at 100,000 entries or 10 GiB per request.
 
 ## Share only part of a folder
 
@@ -142,6 +147,7 @@ ServeIt is intended for a trusted local network. It is not hardened for direct e
 - **The main browser exposes the whole configured root.** With no `--password`, anyone who can reach the server can browse and download it. Dotfiles are currently included, so use a dedicated directory.
 - **Guest links are the isolation boundary.** A guest can access only the files and folder descendants selected when the link was created. Anyone who obtains the URL can use it until it expires or is revoked.
 - **Admin credentials matter.** If `--admin-password` is omitted while `--password` is set, the same password protects both areas. Pass a separate admin password when the main-browser password is shared with other people.
+- **Admin mutations use same-origin request checks.** Share creation and revocation require the admin request header and JSON content type, and reject a mismatched `Origin` when one is supplied.
 - **Share state is reserved.** Temporary-link metadata is stored in `.serveit-shares.json` under the served root. ServeIt hides that file from normal browsing, search, guest links, and ZIP downloads. Existing state from older releases is read automatically and new writes use the ServeIt filename.
 
 Security-default improvements are tracked in the [roadmap](BACKLOG.md). If you discover a vulnerability, avoid including secrets or private share URLs in a public issue.

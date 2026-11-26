@@ -134,6 +134,26 @@ func TestDownloadRejectsMissingAndEscapingPaths(t *testing.T) {
 	}
 }
 
+func TestDownloadRejectsOversizedSelection(t *testing.T) {
+	dir := t.TempDir()
+	restoreRoot(t, dir)
+	path := filepath.Join(dir, "large.bin")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maxDownloadBytes + 1); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := collectZipEntries([]string{"large.bin"}, nil); err == nil || !strings.Contains(err.Error(), "10 GiB") {
+		t.Fatalf("oversized download error = %v", err)
+	}
+}
+
 func TestShareDoesNotFollowSymlinkOutsideSelection(t *testing.T) {
 	dir := t.TempDir()
 	restoreRoot(t, dir)

@@ -16,10 +16,12 @@ import (
 const (
 	maxDownloadSelections = 5000
 	maxZipEntries         = 100000
+	maxDownloadBytes      = int64(10 << 30)
 )
 
 type zipEntry struct {
 	abs  string
+	rel  string
 	name string
 	dir  bool
 	size int64
@@ -36,17 +38,13 @@ func downloadHandler(w http.ResponseWriter, r *http.Request) {
 		writeShareError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	if r.URL.Query().Get("check") == "1" {
-		if err := validateDownloadPaths(paths, nil); err != nil {
-			writeShareError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		writeShareJSON(w, http.StatusOK, map[string]bool{"ok": true})
-		return
-	}
 	entries, total, err := collectZipEntries(paths, nil)
 	if err != nil {
 		writeShareError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if r.URL.Query().Get("check") == "1" {
+		writeShareJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
 	if r.URL.Query().Get("plan") == "1" {
@@ -75,17 +73,13 @@ func shareDownloadHandler(w http.ResponseWriter, r *http.Request, token string) 
 	allow := func(rel string) bool {
 		return shareAllows(&shared, rel)
 	}
-	if r.URL.Query().Get("check") == "1" {
-		if err := validateDownloadPaths(paths, allow); err != nil {
-			writeShareError(w, downloadErrorStatus(err), err.Error())
-			return
-		}
-		writeShareJSON(w, http.StatusOK, map[string]bool{"ok": true})
-		return
-	}
 	entries, total, err := collectZipEntries(paths, allow)
 	if err != nil {
 		writeShareError(w, downloadErrorStatus(err), err.Error())
+		return
+	}
+	if r.URL.Query().Get("check") == "1" {
+		writeShareJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
 	if r.URL.Query().Get("plan") == "1" {
@@ -173,6 +167,11 @@ func writeZipDownload(w http.ResponseWriter, entries []zipEntry) {
 }
 
 func streamStoredZip(w http.ResponseWriter, entries []zipEntry) (bool, error) {
+	rootHandle, err := os.OpenRoot(resolvedRoot)
+	if err != nil {
+		return false, err
+	}
+	defer rootHandle.Close()
 	var writer *zip.Writer
 	started := false
 	begin := func() {
@@ -196,7 +195,10 @@ func streamStoredZip(w http.ResponseWriter, entries []zipEntry) (bool, error) {
 			}
 			continue
 		}
-		file, err := os.Open(entry.abs)
+		file, err := rootHandle.Open(filepath.FromSlash(entry.rel))
+		if entry.rel == "" {
+			file, err = os.Open(entry.abs)
+		}
 		if err != nil {
 			return started, err
 		}
@@ -252,6 +254,9 @@ func collectZipEntries(paths []string, allow func(string) bool) ([]zipEntry, int
 		if len(entries) >= maxZipEntries {
 			return errors.New("too many files in this download")
 		}
+		if !entry.dir && (entry.size < 0 || total > maxDownloadBytes-entry.size) {
+			return errors.New("download exceeds the 10 GiB limit")
+		}
 		seenName[entry.name] = true
 		entries = append(entries, entry)
 		if !entry.dir {
@@ -303,14 +308,14 @@ func collectZipEntries(paths []string, allow func(string) bool) ([]zipEntry, int
 			}
 			if info.IsDir() {
 				if d.Type()&os.ModeSymlink != 0 {
-					if err := add(zipEntry{abs: real, name: strings.TrimSuffix(name, "/") + "/", dir: true}); err != nil {
+					if err := add(zipEntry{abs: real, rel: filepath.ToSlash(child), name: strings.TrimSuffix(name, "/") + "/", dir: true}); err != nil {
 						return err
 					}
 					return walk(real, name)
 				}
-				return add(zipEntry{abs: real, name: name + "/", dir: true})
+				return add(zipEntry{abs: real, rel: filepath.ToSlash(child), name: name + "/", dir: true})
 			}
-			return add(zipEntry{abs: real, name: name, size: info.Size()})
+			return add(zipEntry{abs: real, rel: filepath.ToSlash(child), name: name, size: info.Size()})
 		})
 	}
 	for _, raw := range paths {
@@ -334,12 +339,12 @@ func collectZipEntries(paths []string, allow func(string) bool) ([]zipEntry, int
 			return nil, 0, errors.New("a selected path is no longer available")
 		}
 		if !info.IsDir() {
-			if err := add(zipEntry{abs: abs, name: rel, size: info.Size()}); err != nil {
+			if err := add(zipEntry{abs: abs, rel: rel, name: rel, size: info.Size()}); err != nil {
 				return nil, 0, err
 			}
 			continue
 		}
-		if err := add(zipEntry{abs: abs, name: rel + "/", dir: true}); err != nil {
+		if err := add(zipEntry{abs: abs, rel: rel, name: rel + "/", dir: true}); err != nil {
 			return nil, 0, err
 		}
 		if err := walk(abs, rel); err != nil {

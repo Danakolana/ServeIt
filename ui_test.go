@@ -76,6 +76,39 @@ func TestThemeSwitchUsesCookieAndSafeLocalRedirect(t *testing.T) {
 	}
 }
 
+func TestPublicURLAndAdminMutationChecks(t *testing.T) {
+	previous := publicBaseURL
+	publicBaseURL = ""
+	t.Cleanup(func() { publicBaseURL = previous })
+
+	if got, err := normalizePublicURL("https://files.example.test/"); err != nil || got != "https://files.example.test" {
+		t.Fatalf("normalizePublicURL() = %q, %v", got, err)
+	}
+	if _, err := normalizePublicURL("https://files.example.test/share"); err == nil {
+		t.Fatal("path-bearing public URL was accepted")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://files.example.test/api/admin/shares", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	if err := validateAdminMutation(req, true); err == nil {
+		t.Fatal("admin mutation without request header was accepted")
+	}
+	req.Header.Set("X-ServeIt-Request", "admin")
+	req.Header.Set("Origin", "http://evil.example.test")
+	if err := validateAdminMutation(req, true); err == nil {
+		t.Fatal("cross-origin admin mutation was accepted")
+	}
+	req.Header.Set("Origin", "http://files.example.test")
+	if err := validateAdminMutation(req, true); err != nil {
+		t.Fatalf("same-origin admin mutation was rejected: %v", err)
+	}
+
+	publicBaseURL = "https://public.example.test"
+	if got := requestBaseURL(httptest.NewRequest(http.MethodGet, "http://attacker.example.test/admin", nil)); got != publicBaseURL {
+		t.Fatalf("requestBaseURL() = %q, want %q", got, publicBaseURL)
+	}
+}
+
 func TestShareRemainingSecondsUsesEarliestDeadline(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	remaining, hard := shareRemainingSeconds(Share{ExpiresAt: now.Add(90 * time.Second), HardExpiresAt: now.Add(5 * time.Minute)}, now)

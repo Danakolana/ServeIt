@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,6 +28,8 @@ const (
 var (
 	adminPassword          string
 	adminPasswordGenerated bool
+	publicBaseURL          string
+	serverPort             string
 	shareStore             *ShareStore
 	resolvedRoot           string
 )
@@ -161,6 +164,42 @@ func withAdminAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func validateAdminMutation(r *http.Request, requireJSON bool) error {
+	if r.Header.Get("X-ServeIt-Request") != "admin" {
+		return errors.New("missing admin request header")
+	}
+	if requireJSON {
+		contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil || contentType != "application/json" {
+			return errors.New("admin mutations require application/json")
+		}
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return nil
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.User != nil || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("invalid request origin")
+	}
+	expectedScheme := "http"
+	expectedHost := r.Host
+	if r.TLS != nil {
+		expectedScheme = "https"
+	}
+	if publicBaseURL != "" {
+		canonical, parseErr := url.Parse(publicBaseURL)
+		if parseErr != nil {
+			return errors.New("invalid canonical URL")
+		}
+		expectedScheme, expectedHost = canonical.Scheme, canonical.Host
+	}
+	if !strings.EqualFold(parsed.Scheme, expectedScheme) || !strings.EqualFold(parsed.Host, expectedHost) {
+		return errors.New("request origin does not match this server")
+	}
+	return nil
+}
+
 func adminHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/admin" && r.URL.Path != "/admin/" {
 		http.NotFound(w, r)
@@ -204,6 +243,10 @@ func sharesCollectionHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		writeShareJSON(w, http.StatusOK, views)
 	case http.MethodPost:
+		if err := validateAdminMutation(r, true); err != nil {
+			writeShareError(w, http.StatusForbidden, "Forbidden admin request")
+			return
+		}
 		var request struct {
 			Items              []string
 			IdleTimeoutMinutes int
@@ -245,6 +288,10 @@ func shareItemHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		w.Header().Set("Allow", "DELETE")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := validateAdminMutation(r, false); err != nil {
+		writeShareError(w, http.StatusForbidden, "Forbidden admin request")
 		return
 	}
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/shares/"), "/")
@@ -641,12 +688,34 @@ func (store *ShareStore) persistLocked() error {
 		return err
 	}
 	temporary := store.path + ".tmp"
-	if err := os.WriteFile(temporary, data, 0600); err != nil {
+	removeTemporary := true
+	defer func() {
+		if removeTemporary {
+			_ = os.Remove(temporary)
+		}
+	}()
+	file, err := os.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(temporary, store.path); err != nil {
-		_ = os.Remove(temporary)
 		return err
+	}
+	removeTemporary = false
+	if directory, err := os.Open(filepath.Dir(store.path)); err == nil {
+		_ = directory.Sync()
+		_ = directory.Close()
 	}
 	return nil
 }
@@ -674,22 +743,35 @@ func makeAdminView(r *http.Request, item Share) ShareAdminView {
 }
 
 func requestBaseURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
+	if publicBaseURL != "" {
+		return publicBaseURL
 	}
-	forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
-	if forwarded == "http" || forwarded == "https" {
-		scheme = forwarded
+	port := serverPort
+	if port == "" {
+		_, port, _ = net.SplitHostPort(r.Host)
 	}
-	host := r.Host
-	hostname, port, err := net.SplitHostPort(host)
-	if err == nil && (hostname == "localhost" || (net.ParseIP(hostname) != nil && net.ParseIP(hostname).IsLoopback())) {
+	if port != "" {
 		if discovered, _ := discoverLANURLs(port); len(discovered) > 0 {
 			return discovered[0]
 		}
 	}
-	return scheme + "://" + host
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+func normalizePublicURL(raw string) (string, error) {
+	value := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if value == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("public URL must be an http(s) origin without a path, query, or fragment")
+	}
+	return value, nil
 }
 
 func writeShareJSON(w http.ResponseWriter, status int, value any) {

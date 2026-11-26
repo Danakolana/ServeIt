@@ -52,11 +52,18 @@ type SearchResult struct {
 	Size    int64  `json:"size"`
 }
 
+const (
+	minSearchQueryLength  = 2
+	maxSearchResults      = 200
+	maxConcurrentSearches = 4
+)
+
 // ─── globals ─────────────────────────────────────────────────────────────────
 
 var (
-	root     string
-	password string
+	root        string
+	password    string
+	searchSlots = make(chan struct{}, maxConcurrentSearches)
 )
 
 // ─── main ────────────────────────────────────────────────────────────────────
@@ -65,6 +72,7 @@ func main() {
 	port := flag.String("port", "8080", "port to listen on")
 	pass := flag.String("password", "", "basic-auth password (username is always 'admin'); leave empty to disable auth")
 	adminPass := flag.String("admin-password", "", "super-admin password (username is always 'admin'); generated when omitted")
+	publicURLFlag := flag.String("public-url", "", "canonical http(s) origin used in guest links and QR codes")
 	dir := flag.String("dir", ".", "directory to serve")
 	flag.Parse()
 
@@ -74,6 +82,11 @@ func main() {
 		log.Fatalf("cannot resolve directory: %v", err)
 	}
 	password = *pass
+	serverPort = *port
+	publicBaseURL, err = normalizePublicURL(*publicURLFlag)
+	if err != nil {
+		log.Fatalf("invalid --public-url: %v", err)
+	}
 	if err := initSharing(*adminPass); err != nil {
 		log.Fatalf("cannot initialize sharing: %v", err)
 	}
@@ -226,9 +239,15 @@ func breadcrumbs(rel string) []Crumb {
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
-	if q == "" {
+	if len([]rune(q)) < minSearchQueryLength {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode([]SearchResult{})
+		return
+	}
+	select {
+	case searchSlots <- struct{}{}:
+		defer func() { <-searchSlots }()
+	case <-r.Context().Done():
 		return
 	}
 
@@ -266,7 +285,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 				Size:    size,
 			})
 		}
-		if len(results) >= 200 { // cap results
+		if len(results) >= maxSearchResults {
 			return filepath.SkipAll
 		}
 		return nil

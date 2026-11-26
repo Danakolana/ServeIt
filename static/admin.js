@@ -15,13 +15,13 @@ $('#shares').onclick=async e=>{const b=e.target.closest('button');if(!b)return;c
  if(a==='copy'){try{await S.copy(s.URL);S.toast('Link copied')}catch{S.toast('Copy failed. Select the link and copy it.',1)}}
  if(a==='qr')qr(s);
  if(a==='rev'&&confirm('Revoke this link now? People using it lose access.')){
-  const r=await fetch('/api/admin/shares/'+encodeURIComponent(s.ID),{method:'DELETE'});
+  const r=await fetch('/api/admin/shares/'+encodeURIComponent(s.ID),{method:'DELETE',headers:{'X-ServeIt-Request':'admin'}});
   if(r.ok){S.toast('Link revoked');load()}else S.toast('Could not revoke the link',1)}};
 setInterval(()=>S.$$('.badge.active').forEach(b=>{const n=left(list[b.dataset.i]);b.textContent=n?S.dur(n)+' left':'expired'}),1000);
 setInterval(load,15000);load();
 const t=$('#t');
 if(t)S.pick(t,{key:'serveit-share-selection',go:async(paths,toast,clear)=>{
- try{const r=await fetch('/api/admin/shares',{method:'POST',headers:S.J,body:JSON.stringify({items:paths,idleTimeoutMinutes:+$('#idle').value,maxLifetimeMinutes:+$('#max').value})});
+ try{const r=await fetch('/api/admin/shares',{method:'POST',headers:{...S.J,'X-ServeIt-Request':'admin'},body:JSON.stringify({items:paths,idleTimeoutMinutes:+$('#idle').value,maxLifetimeMinutes:+$('#max').value})});
   const j=await r.json();if(!r.ok)throw new Error(j.error||'Could not create the link');
   clear();toast('Link created');qr(j);load()}catch(e){toast(e.message,1)}}});
 })();
