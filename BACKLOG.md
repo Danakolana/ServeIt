@@ -84,25 +84,25 @@ Loopback probe (`PERF_PROBE=1 go test -run TestPerformanceProbe -v`): 2,000 file
 
 ## 7. Make every valid filename downloadable
 
-**Status: pending. Priority: high.**
+**Status: implemented.**
 
 The main browser currently mishandles several ordinary filesystem names. `http.ServeFile` redirects a request ending in `/index.html` to its directory, so an `index.html` file cannot be downloaded directly. Main-browser links also leave `#`, `?`, and percent sequences with URL semantics instead of encoding them as filename bytes. A symlink whose resolved target is a directory is rendered as a downloadable file.
 
 - Serve direct files in both the main browser and guest shares with `os.Open` plus `http.ServeContent`, retaining HEAD, Range, modification time, MIME detection, and the current attachment filename.
 - Add one path-to-URL helper that percent-encodes each path segment while preserving `/` separators. Use it for main listing links and breadcrumbs. Keep query-parameter paths encoded as query data.
 - Classify an allowed symlink using its resolved target so a symlink to a directory receives directory navigation, sorting, and selection behavior.
-- Add handler tests for nested `index.html`, spaces, Unicode, `#`, `?`, `%41`, literal `%`, and symlinked directories. Assert the rendered URL and the bytes returned by following it.
+- Handler tests cover nested `index.html`, spaces, Unicode, `#`, `?`, `%41`, literal `%`, and symlinked directories. They assert the rendered URL and the bytes returned by following it.
 
 ## 8. Protect open-mode servers from accidental exposure and DNS rebinding
 
-**Status: core protections implemented; follow-up hardening remains. Priority: critical.**
+**Status: core protections implemented; IPv6 and state-file alias follow-up implemented. Priority: critical.**
 
 No password is the default. ServeIt now validates Host headers, supports an explicit listen address and hidden-file policy, and prints an open-mode warning. The remaining work is to expand platform-specific coverage and test the edge cases below.
 
 - Validate the request Host before routing. Accept configured IP literals, loopback names, the machine hostname, and explicit names supplied by a repeatable `--allow-host` option. Reject other hosts consistently, including requests for files, search, shares, and admin APIs. **Implemented.**
-- Replace the fixed IPv4-only bind with an explicit `--listen` address and support IPv6 listeners and bracketed IPv6 URLs. Preserve a predictable default and show every reachable address accurately at startup. **Core listener option implemented; address display and platform coverage remain.**
+- Replace the fixed IPv4-only bind with an explicit `--listen` address and support IPv6 listeners and bracketed IPv6 URLs. Preserve a predictable default and show every reachable address accurately at startup. **Implemented for private IPv6 addresses, bracketed URLs, and explicit IPv6 listen values; platform-specific display coverage remains.**
 - Hide any path segment beginning with `.` by default. Enforce this in direct file access, listings, search, share creation and browsing, ZIP planning, checks, and archive generation. Add `--show-hidden` as an explicit opt-in. **Implemented.**
-- Continue reserving the share-state file even when hidden files are enabled. On case-insensitive filesystems, identify the actual state file with filesystem identity (`os.SameFile` or an equivalent resolved comparison) rather than a case-sensitive spelling check.
+- Continue reserving the share-state file even when hidden files are enabled. On case-insensitive filesystems, identify the actual state file with filesystem identity (`os.SameFile` or an equivalent resolved comparison) rather than a case-sensitive spelling check. **Implemented for the active state path and aliases.**
 - Print a concise startup warning when the full browser has no password. State whether hidden files are excluded and show the opt-in flag. **Implemented.**
 - Add DNS-rebinding-style Host tests and table-driven hidden-path tests, including nested dot directories, alternate state-file casing, symlinks, search, and ZIP requests.
 
@@ -112,10 +112,10 @@ No password is the default. ServeIt now validates Host headers, supports an expl
 
 The state file is written inside the served root. Existing shares loaded from a read-only USB drive or mount fail on every view because activity persistence cannot create and rename the temporary file; the resulting storage error is currently reported as “Share link not found.” Invalid JSON also aborts startup, and every view rewrites the complete file while expired and revoked records accumulate forever.
 
-- Add an explicit `--state-file` option and environment equivalent. Choose a writable per-user default keyed by the canonical served root, with a documented compatibility or one-time migration path for existing state files.
+- Add an explicit `--state-file` option and environment equivalent. Choose a writable per-user default keyed by the canonical served root, with a documented compatibility or one-time migration path for existing state files. **Implemented with `SERVEIT_STATE_FILE`, per-user root-keyed defaults, and legacy-file migration.**
 - Keep share creation and revocation durable before reporting success. Coalesce page-view, download-count, and idle-expiry writes over a short bounded interval, flush them during graceful shutdown, and document the maximum counter/activity loss after a crash.
 - Never mutate the in-memory record permanently when persistence fails. Return a distinct internal/storage error and show an accurate 5xx response instead of “not found.” **Implemented for activity updates and revocation.**
-- If the state JSON is corrupt, atomically quarantine it with a timestamped backup name, start with an empty store, and print a warning containing the recovery path. Do not overwrite the only corrupt copy.
+- If the state JSON is corrupt, atomically quarantine it with a timestamped backup name, start with an empty store, and print a warning containing the recovery path. Do not overwrite the only corrupt copy. **Implemented.**
 - Prune revoked and long-expired shares using a documented retention window so the file and admin response stay bounded.
 - Test read-only roots, unwritable state destinations, interrupted writes, corrupt JSON recovery, restart persistence, migration, and pruning.
 

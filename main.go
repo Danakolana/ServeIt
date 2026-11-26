@@ -87,6 +87,7 @@ func main() {
 	adminPass := flag.String("admin-password", "", "super-admin password (username is always 'admin'); generated when omitted")
 	publicURLFlag := flag.String("public-url", "", "canonical http(s) origin used in guest links and QR codes")
 	listenAddressFlag := flag.String("listen", "0.0.0.0", "IP address to listen on")
+	stateFileFlag := flag.String("state-file", "", "path for persistent share state (defaults to a per-user ServeIt state file)")
 	showHiddenFlag := flag.Bool("show-hidden", false, "include files and folders whose path segment starts with '.'")
 	var allowHostFlags stringListFlag
 	flag.Var(&allowHostFlags, "allow-host", "additional Host name or IP accepted by the server (repeatable)")
@@ -101,7 +102,17 @@ func main() {
 	password = *pass
 	showHidden = *showHiddenFlag
 	serverPort = *port
-	serverAddress = *listenAddressFlag
+	stateFileOverride = strings.TrimSpace(*stateFileFlag)
+	if stateFileOverride == "" {
+		stateFileOverride = strings.TrimSpace(os.Getenv("SERVEIT_STATE_FILE"))
+	}
+	serverAddress = strings.TrimSpace(*listenAddressFlag)
+	if strings.HasPrefix(serverAddress, "[") && strings.HasSuffix(serverAddress, "]") {
+		serverAddress = strings.TrimSuffix(strings.TrimPrefix(serverAddress, "["), "]")
+	}
+	if serverAddress == "" {
+		log.Fatal("--listen must not be empty")
+	}
 	allowedHosts = buildAllowedHosts(serverAddress, allowHostFlags)
 	publicBaseURL, err = normalizePublicURL(*publicURLFlag)
 	if err != nil {
@@ -336,14 +347,15 @@ func readDir(abs, rel string) ([]Entry, error) {
 		if _, err := secureResolve(relPath); err != nil {
 			continue
 		}
-		info, err := de.Info()
+		entryAbs := filepath.Join(abs, de.Name())
+		info, err := os.Stat(entryAbs)
 		if err != nil {
 			continue
 		}
 		entries = append(entries, Entry{
 			Name:    de.Name(),
 			RelPath: relPath,
-			IsDir:   de.IsDir(),
+			IsDir:   info.IsDir(),
 			Size:    info.Size(),
 			ModTime: info.ModTime(),
 		})

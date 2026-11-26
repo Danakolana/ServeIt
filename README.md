@@ -108,9 +108,10 @@ On Windows, use `ServeIt.exe`; the flags are the same.
 | `--admin-password` | see description | Password for `/admin`, with username `admin`. If omitted, ServeIt reuses `--password`; if both are empty, it generates and prints a random password. |
 | `--public-url` | auto-detected LAN URL | Canonical `http://` or `https://` origin used in guest links and QR codes. Set this when ServeIt is behind a reverse proxy. |
 | `--allow-host` | local names and addresses | Additional Host name or IP accepted by the server. Repeat the flag for multiple names. |
+| `--state-file` | per-user ServeIt state path | Store share metadata outside the served directory. Relative paths are resolved from the current working directory. `SERVEIT_STATE_FILE` provides the same setting. |
 | `--show-hidden` | false | Include path segments beginning with `.` in browsing, search, shares, and downloads. |
 
-Startup QR codes are generated only for `192.168.x.x` addresses. Docker, VM, link-local, and other interface ranges are skipped to reduce the chance of scanning an unusable address. If no `192.168` address exists, ServeIt displays `127.0.0.1` for local access. Guest-link QR codes use `--public-url` when it is configured.
+Startup QR codes prefer `192.168.x.x` addresses and may include private IPv6 addresses such as `fd00::/8`. Docker, VM, link-local, and other interface ranges are skipped to reduce the chance of scanning an unusable address. If no usable LAN address exists, ServeIt displays a loopback address for local access. Guest-link QR codes use `--public-url` when it is configured.
 
 When `--public-url` is set, it is used instead of request headers, so a forged `Host` or `X-Forwarded-Proto` header cannot change generated links.
 
@@ -154,7 +155,7 @@ ServeIt is intended for a trusted local network. It is not hardened for direct e
 - **Guest links are the isolation boundary.** A guest can access only the files and folder descendants selected when the link was created. Anyone who obtains the URL can use it until it expires or is revoked.
 - **Admin credentials matter.** If `--admin-password` is omitted while `--password` is set, the same password protects both areas. Pass a separate admin password when the main-browser password is shared with other people.
 - **Admin mutations use same-origin request checks.** Share creation and revocation require the admin request header and JSON content type, and reject a mismatched `Origin` when one is supplied.
-- **Share state is reserved.** Temporary-link metadata is stored in `.serveit-shares.json` under the served root. ServeIt hides that file from normal browsing, search, guest links, and ZIP downloads. Existing state from older releases is read automatically and new writes use the ServeIt filename.
+- **Share state is reserved.** Temporary-link metadata is stored in a per-user ServeIt state file outside the served root by default. Use `--state-file` or `SERVEIT_STATE_FILE` to choose a location. Existing `.serveit-shares.json` and `.lanserve-shares.json` files under the served root are migrated on first use, while aliases to the active state file remain hidden from browsing, search, guest links, and ZIP downloads. Corrupt state is quarantined with a timestamped backup instead of being overwritten.
 
 Security-default improvements are tracked in the [roadmap](BACKLOG.md). If you discover a vulnerability, avoid including secrets or private share URLs in a public issue.
 

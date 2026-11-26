@@ -224,9 +224,13 @@ func TestHiddenPathsAreExcludedAcrossAccessPaths(t *testing.T) {
 
 func TestShareUseRollsBackWhenPersistenceFails(t *testing.T) {
 	dir := t.TempDir()
+	blocked := filepath.Join(dir, "blocked")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	share := &Share{ID: "id", Token: "token", LastActivityAt: time.Unix(100, 0), ExpiresAt: time.Now().Add(time.Hour), HardExpiresAt: time.Now().Add(2 * time.Hour), IdleTimeoutMinutes: 10}
 	before := *share
-	store := &ShareStore{path: filepath.Join(dir, "missing", "state.json"), shares: []*Share{share}}
+	store := &ShareStore{path: filepath.Join(blocked, "state.json"), shares: []*Share{share}}
 	if _, err := store.Use("token", "", false); !errors.Is(err, errShareStorage) {
 		t.Fatalf("Use() error = %v, want storage error", err)
 	}
@@ -275,7 +279,71 @@ func TestLegacyShareStateIsLoadedWithServeItWritePath(t *testing.T) {
 	if len(shareStore.shares) != 1 || shareStore.shares[0].ID != "legacy-share" {
 		t.Fatalf("legacy shares were not loaded: %#v", shareStore.shares)
 	}
-	if shareStore.path != filepath.Join(dir, shareStateFilename) {
-		t.Fatalf("new writes use %q, want %q", shareStore.path, filepath.Join(dir, shareStateFilename))
+	statePath, err := resolveStatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shareStore.path != statePath {
+		t.Fatalf("new writes use %q, want %q", shareStore.path, statePath)
+	}
+}
+
+func TestStateFileConfigurationAndCorruptQuarantine(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state", "shares.json")
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previousRoot, previousResolved := root, resolvedRoot
+	previousOverride, previousStore := stateFileOverride, shareStore
+	previousPassword, previousAdminPassword := password, adminPassword
+	previousGenerated := adminPasswordGenerated
+	root, resolvedRoot = dir, dir
+	password, adminPassword = "main", "admin"
+	stateFileOverride = statePath
+	t.Cleanup(func() {
+		root, resolvedRoot = previousRoot, previousResolved
+		stateFileOverride, shareStore = previousOverride, previousStore
+		password, adminPassword = previousPassword, previousAdminPassword
+		adminPasswordGenerated = previousGenerated
+	})
+
+	if err := initSharing("admin"); err != nil {
+		t.Fatal(err)
+	}
+	if len(shareStore.shares) != 0 {
+		t.Fatalf("corrupt state loaded as shares: %#v", shareStore.shares)
+	}
+	matches, err := filepath.Glob(statePath + ".corrupt-*")
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("quarantine files = %#v, err=%v", matches, err)
+	}
+
+	stateFileOverride = ""
+	t.Setenv("SERVEIT_STATE_FILE", filepath.Join(dir, "from-env.json"))
+	got, err := resolveStatePath()
+	if err != nil || got != filepath.Join(dir, "from-env.json") {
+		t.Fatalf("environment state path = %q, err=%v", got, err)
+	}
+}
+
+func TestStateFileIdentityProtectsAliases(t *testing.T) {
+	dir := t.TempDir()
+	actual := filepath.Join(dir, "custom-state.json")
+	alias := filepath.Join(dir, "alias.json")
+	if err := os.WriteFile(actual, []byte("[]"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(actual, alias); err != nil {
+		t.Fatal(err)
+	}
+	previousRoot, previousPaths := root, activeStatePaths
+	root, activeStatePaths = dir, []string{actual}
+	t.Cleanup(func() { root, activeStatePaths = previousRoot, previousPaths })
+	if !isShareStatePath("alias.json") {
+		t.Fatal("state-file alias was not reserved")
 	}
 }

@@ -2,10 +2,12 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"mime"
 	"net"
 	"net/http"
@@ -32,6 +34,8 @@ var (
 	serverPort             string
 	shareStore             *ShareStore
 	resolvedRoot           string
+	stateFileOverride      string
+	activeStatePaths       []string
 )
 
 type AdminPageData struct {
@@ -125,25 +129,56 @@ func initSharing(configuredPassword string) error {
 		}
 		adminPasswordGenerated = true
 	}
-	statePath := filepath.Join(root, shareStateFilename)
-	if _, statErr := os.Stat(statePath); errors.Is(statErr, os.ErrNotExist) {
-		legacyPath := filepath.Join(root, legacyShareStateFilename)
-		if _, legacyErr := os.Stat(legacyPath); legacyErr == nil {
-			shareStore, err = loadShareStore(legacyPath)
-			if err == nil {
-				// New writes use the ServeIt name while preserving old state until
-				// the owner removes it or the migration is otherwise completed.
-				shareStore.path = statePath
+	statePath, err := resolveStatePath()
+	if err != nil {
+		return err
+	}
+	activeStatePaths = []string{statePath}
+	if _, statErr := os.Stat(statePath); errors.Is(statErr, os.ErrNotExist) && stateFileOverride == "" && strings.TrimSpace(os.Getenv("SERVEIT_STATE_FILE")) == "" {
+		for _, legacyPath := range []string{filepath.Join(root, shareStateFilename), filepath.Join(root, legacyShareStateFilename)} {
+			if _, legacyErr := os.Stat(legacyPath); legacyErr == nil {
+				shareStore, err = loadShareStore(legacyPath)
+				if err == nil {
+					shareStore.path = statePath
+					activeStatePaths = append(activeStatePaths, legacyPath)
+				}
+				return err
+			} else if !errors.Is(legacyErr, os.ErrNotExist) {
+				return legacyErr
 			}
-			return err
-		} else if !errors.Is(legacyErr, os.ErrNotExist) {
-			return legacyErr
 		}
 	} else if statErr != nil {
 		return statErr
 	}
 	shareStore, err = loadShareStore(statePath)
 	return err
+}
+
+func resolveStatePath() (string, error) {
+	value := strings.TrimSpace(stateFileOverride)
+	if value == "" {
+		value = strings.TrimSpace(os.Getenv("SERVEIT_STATE_FILE"))
+	}
+	if value != "" {
+		if !filepath.IsAbs(value) {
+			absolute, err := filepath.Abs(value)
+			if err != nil {
+				return "", err
+			}
+			value = absolute
+		}
+		return filepath.Clean(value), nil
+	}
+	configDir, err := os.UserConfigDir()
+	if err != nil || strings.TrimSpace(configDir) == "" {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return "", fmt.Errorf("cannot determine a per-user state directory: %w", err)
+		}
+		configDir = filepath.Join(home, ".config")
+	}
+	digest := sha256.Sum256([]byte(resolvedRoot))
+	return filepath.Join(configDir, "ServeIt", "shares", fmt.Sprintf("%x.json", digest[:12])), nil
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -523,6 +558,18 @@ func isShareStatePath(rel string) bool {
 			return true
 		}
 	}
+	if root != "" && len(activeStatePaths) > 0 {
+		candidate := filepath.Join(root, filepath.FromSlash(rel))
+		candidateInfo, err := os.Stat(candidate)
+		if err == nil {
+			for _, statePath := range activeStatePaths {
+				stateInfo, stateErr := os.Stat(statePath)
+				if stateErr == nil && os.SameFile(candidateInfo, stateInfo) {
+					return true
+				}
+			}
+		}
+	}
 	return false
 }
 
@@ -589,7 +636,12 @@ func loadShareStore(path string) (*ShareStore, error) {
 	}
 	if len(data) > 0 {
 		if err := json.Unmarshal(data, &store.shares); err != nil {
-			return nil, err
+			backup := path + ".corrupt-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+			if renameErr := os.Rename(path, backup); renameErr != nil {
+				return nil, fmt.Errorf("state file is corrupt and could not be quarantined: %w", renameErr)
+			}
+			log.Printf("warning: corrupt share state moved to %s", backup)
+			return store, nil
 		}
 	}
 	return store, nil
@@ -704,6 +756,9 @@ func (store *ShareStore) Revoke(id string) error {
 }
 
 func (store *ShareStore) persistLocked() error {
+	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(store.shares, "", "  ")
 	if err != nil {
 		return err
@@ -1044,26 +1099,43 @@ func discoverLANURLs(port string) ([]string, int) {
 			}
 		}
 	}
+	if configured := net.ParseIP(serverAddress); configured != nil {
+		ips = append(ips, configured)
+	}
 	return chooseLANURLs(port, ips)
 }
 
 func chooseLANURLs(port string, ips []net.IP) ([]string, int) {
 	seen := make(map[string]bool)
 	var urls []string
+	var loopback net.IP
 	skipped := 0
 	for _, ip := range ips {
-		ip4 := ip.To4()
-		if ip4 == nil || ip.IsLoopback() {
+		if ip == nil {
 			continue
 		}
-		if ip4[0] != 192 || ip4[1] != 168 {
+		if ip.IsLoopback() {
+			if loopback == nil {
+				loopback = ip
+			}
+			continue
+		}
+		ip4 := ip.To4()
+		if ip4 != nil && (ip4[0] != 192 || ip4[1] != 168) {
 			if !seen["skip:"+ip4.String()] {
 				seen["skip:"+ip4.String()] = true
 				skipped++
 			}
 			continue
 		}
-		base := fmt.Sprintf("http://%s:%s", ip4.String(), port)
+		if ip4 == nil && !ip.IsPrivate() {
+			if !seen["skip:"+ip.String()] {
+				seen["skip:"+ip.String()] = true
+				skipped++
+			}
+			continue
+		}
+		base := lanURL(ip, port)
 		if !seen[base] {
 			seen[base] = true
 			urls = append(urls, base)
@@ -1071,7 +1143,17 @@ func chooseLANURLs(port string, ips []net.IP) ([]string, int) {
 	}
 	sort.Strings(urls)
 	if len(urls) == 0 {
+		if loopback != nil && loopback.To4() == nil {
+			return []string{lanURL(loopback, port)}, skipped
+		}
 		return []string{"http://127.0.0.1:" + port}, skipped
 	}
 	return urls, skipped
+}
+
+func lanURL(ip net.IP, port string) string {
+	if ip4 := ip.To4(); ip4 != nil {
+		return fmt.Sprintf("http://%s:%s", ip4.String(), port)
+	}
+	return fmt.Sprintf("http://[%s]:%s", ip.String(), port)
 }

@@ -37,6 +37,17 @@ func TestChooseLANURLsFallsBackToLoopback(t *testing.T) {
 	}
 }
 
+func TestChooseLANURLsSupportsPrivateIPv6(t *testing.T) {
+	urls, skipped := chooseLANURLs("9000", []net.IP{net.ParseIP("fd12:3456::20"), net.ParseIP("fe80::1")})
+	if skipped != 1 || len(urls) != 1 || urls[0] != "http://[fd12:3456::20]:9000" {
+		t.Fatalf("urls=%#v skipped=%d", urls, skipped)
+	}
+	urls, skipped = chooseLANURLs("9000", []net.IP{net.ParseIP("::1")})
+	if skipped != 0 || len(urls) != 1 || urls[0] != "http://[::1]:9000" {
+		t.Fatalf("IPv6 fallback urls=%#v skipped=%d", urls, skipped)
+	}
+}
+
 func TestDownloadZipIsStoredAndStreamsSelection(t *testing.T) {
 	dir := t.TempDir()
 	restoreRoot(t, dir)
@@ -218,6 +229,77 @@ func TestShareStateSymlinkCannotBeDownloaded(t *testing.T) {
 	}
 	if _, _, err := collectZipEntries([]string{"alias.json"}, nil); err == nil {
 		t.Fatal("share state alias added to archive")
+	}
+}
+
+func TestBrowseServesLiteralFilenamesAndSymlinkDirectories(t *testing.T) {
+	dir := t.TempDir()
+	restoreRoot(t, dir)
+	if err := initTemplates(); err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]string{
+		"nested/index.html": "index bytes",
+		"a#b.txt":           "hash bytes",
+		"what?.txt":         "question bytes",
+		"100%41.txt":        "percent bytes",
+		"فایل.txt":          "unicode bytes",
+	}
+	for name, body := range names {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "target"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "target", "inside.txt"), []byte("inside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "target"), filepath.Join(dir, "linked")); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	browseHandler(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("listing status = %d", recorder.Code)
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{"/a%23b.txt", "/what%3F.txt", "/100%2541.txt", "/%D9%81%D8%A7%DB%8C%D9%84.txt", "/linked/"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("listing does not contain escaped URL %q:\n%s", want, body)
+		}
+	}
+
+	for _, test := range []struct {
+		path string
+		want string
+	}{
+		{"/nested/index.html", "index bytes"},
+		{"/a%23b.txt", "hash bytes"},
+		{"/what%3F.txt", "question bytes"},
+		{"/100%2541.txt", "percent bytes"},
+		{"/%D9%81%D8%A7%DB%8C%D9%84.txt", "unicode bytes"},
+	} {
+		recorder := httptest.NewRecorder()
+		browseHandler(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+		if recorder.Code != http.StatusOK || recorder.Body.String() != test.want {
+			t.Fatalf("GET %s returned status %d body %q", test.path, recorder.Code, recorder.Body.String())
+		}
+		if got := recorder.Header().Get("Content-Disposition"); !strings.Contains(got, "attachment") {
+			t.Fatalf("GET %s Content-Disposition = %q", test.path, got)
+		}
+	}
+
+	recorder = httptest.NewRecorder()
+	browseHandler(recorder, httptest.NewRequest(http.MethodGet, "/linked/", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "inside.txt") {
+		t.Fatalf("symlink directory listing status=%d body=%q", recorder.Code, recorder.Body.String())
 	}
 }
 
