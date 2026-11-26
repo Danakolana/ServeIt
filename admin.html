@@ -31,13 +31,14 @@ td.num{text-align:right;color:#64748b;font-variant-numeric:tabular-nums}.select-
 .credit p+p::before{content:"·";margin:0 10px;color:#cbd5e1}
 .credit a{color:#64748b;text-decoration:none;border-bottom:1px solid #e2e8f0}
 .credit a:hover{color:#4f46e5;border-bottom-color:#c7d2fe}
+.theme-picker{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.theme-choice{font-size:.78rem;color:#4338ca;text-decoration:none;padding:6px 8px;border-radius:7px;font-weight:600}.theme-choice:hover,.theme-choice.active{background:#eef2ff}.theme-choice.active{color:#312e81}
 @media(max-width:850px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.wrap{padding:14px}.share{grid-template-columns:1fr}.date-col{display:none}.modal-actions button{width:100%}}
 </style>
 </head>
 <body>
 <header>
   <h1>ServeIt</h1>
-  <div class="links"><a href="{{.ThemeSwitchURL}}">Modern UI</a><a href="/">Files</a><a href="/admin">Admin</a></div>
+  <div class="links"><div class="theme-picker" role="group" aria-label="Theme">{{range .ThemeOptions}}{{if .Active}}<span class="theme-choice active" aria-current="page">{{.Label}}</span>{{else}}<a class="theme-choice" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}</div><a href="/">Files</a><a href="/admin">Admin</a></div>
 </header>
 <main class="wrap">
   <section class="stats">

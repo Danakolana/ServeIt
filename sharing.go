@@ -40,6 +40,7 @@ type AdminPageData struct {
 	Entries        []Entry
 	Parents        []Crumb
 	ThemeSwitchURL string
+	ThemeOptions   []ThemeOption
 }
 
 type SharedPageData struct {
@@ -53,6 +54,7 @@ type SharedPageData struct {
 	RemainingSeconds     int64
 	HardRemainingSeconds int64
 	ThemeSwitchURL       string
+	ThemeOptions         []ThemeOption
 }
 
 type ShareItem struct {
@@ -228,7 +230,7 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := AdminPageData{CurrentPath: displaySharePath(rel), CurrentRel: rel, Entries: entries, Parents: adminBreadcrumbs(rel), ThemeSwitchURL: themeSwitchURL(r)}
+	data := AdminPageData{CurrentPath: displaySharePath(rel), CurrentRel: rel, Entries: entries, Parents: adminBreadcrumbs(rel), ThemeSwitchURL: themeSwitchURL(r), ThemeOptions: themeOptions(r)}
 	if err := templatesForRequest(r).admin.Execute(w, data); err != nil {
 		fmt.Printf("admin template error: %v\n", err)
 	}
@@ -381,7 +383,7 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	remaining, hardRemaining := shareRemainingSeconds(shared, time.Now())
-	data := SharedPageData{Token: token, CurrentPath: sharedDisplayPath(rel), Entries: entries, Parents: sharedBreadcrumbs(&shared, rel), ExpiresAt: shared.ExpiresAt, HardExpiresAt: shared.HardExpiresAt, IdleTimeoutMinutes: shared.IdleTimeoutMinutes, RemainingSeconds: remaining, HardRemainingSeconds: hardRemaining, ThemeSwitchURL: themeSwitchURL(r)}
+	data := SharedPageData{Token: token, CurrentPath: sharedDisplayPath(rel), Entries: entries, Parents: sharedBreadcrumbs(&shared, rel), ExpiresAt: shared.ExpiresAt, HardExpiresAt: shared.HardExpiresAt, IdleTimeoutMinutes: shared.IdleTimeoutMinutes, RemainingSeconds: remaining, HardRemainingSeconds: hardRemaining, ThemeSwitchURL: themeSwitchURL(r), ThemeOptions: themeOptions(r)}
 	if err := templatesForRequest(r).share.Execute(w, data); err != nil {
 		fmt.Printf("share template error: %v\n", err)
 	}

@@ -32,6 +32,7 @@ th.size .sort{display:block;width:100%;text-align:right}
 .credit p+p::before{content:"·";margin:0 10px;color:#cbd5e1}
 .credit a{color:#64748b;text-decoration:none;border-bottom:1px solid #e2e8f0}
 .credit a:hover{color:#4f46e5;border-bottom-color:#c7d2fe}
+.theme-picker{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.theme-choice{font-size:.78rem;color:#4338ca;text-decoration:none;padding:6px 8px;border-radius:7px;font-weight:600}.theme-choice:hover,.theme-choice.active{background:#eef2ff}.theme-choice.active{color:#312e81}
 @media(max-width:640px){header,nav,.container{padding-left:14px;padding-right:14px}td.date,th.date{display:none}}
 
 /* ── search box ── */
@@ -91,7 +92,7 @@ td.date{color:#94a3b8;white-space:nowrap;font-size:.8rem}
     </svg>
     <input id="search-box" type="search" placeholder="Search files and folders…" autocomplete="off" spellcheck="false"/>
   </div>
-  <a class="admin-link" href="{{.ThemeSwitchURL}}">Modern UI</a>
+  <div class="theme-picker" role="group" aria-label="Theme">{{range .ThemeOptions}}{{if .Active}}<span class="theme-choice active" aria-current="page">{{.Label}}</span>{{else}}<a class="theme-choice" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}</div>
   <a class="admin-link" href="/admin">Super admin</a>
 </header>
 

@@ -20,7 +20,7 @@ import (
 
 // ─── embedded HTML template ──────────────────────────────────────────────────
 
-//go:embed tmpl.html admin.html share.html themes/modern/*.html static
+//go:embed tmpl.html admin.html share.html themes/modern/*.html themes/harbor/*.html static
 var tmplFS embed.FS
 
 // ─── data types ──────────────────────────────────────────────────────────────
@@ -39,6 +39,7 @@ type PageData struct {
 	Parents        []Crumb
 	Query          string
 	ThemeSwitchURL string
+	ThemeOptions   []ThemeOption
 }
 
 type Crumb struct {
@@ -288,6 +289,7 @@ func browseHandler(w http.ResponseWriter, r *http.Request) {
 		Entries:        entries,
 		Parents:        breadcrumbs(rel),
 		ThemeSwitchURL: themeSwitchURL(r),
+		ThemeOptions:   themeOptions(r),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

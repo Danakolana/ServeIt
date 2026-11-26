@@ -15,8 +15,25 @@ import (
 const (
 	themeClassic    = "classic"
 	themeModern     = "modern"
+	themeHarbor     = "harbor"
 	themeCookieName = "serveit_theme"
 )
+
+type ThemeOption struct {
+	Name   string
+	Label  string
+	URL    string
+	Active bool
+}
+
+var themeOrder = []struct {
+	name  string
+	label string
+}{
+	{themeClassic, "Classic"},
+	{themeModern, "Modern"},
+	{themeHarbor, "Harbor"},
+}
 
 type uiTemplateSet struct {
 	browse *template.Template
@@ -46,6 +63,7 @@ func initTemplates() error {
 	sets := map[string][3]string{
 		themeClassic: {"tmpl.html", "admin.html", "share.html"},
 		themeModern:  {"themes/modern/tmpl.html", "themes/modern/admin.html", "themes/modern/share.html"},
+		themeHarbor:  {"themes/harbor/tmpl.html", "themes/harbor/admin.html", "themes/harbor/share.html"},
 	}
 	uiTemplates = make(map[string]uiTemplateSet, len(sets))
 	for theme, files := range sets {
@@ -72,10 +90,19 @@ func parseEmbeddedTemplate(filename string) (*template.Template, error) {
 
 func requestTheme(r *http.Request) string {
 	cookie, err := r.Cookie(themeCookieName)
-	if err == nil && cookie.Value == themeModern {
-		return themeModern
+	if err == nil && isSupportedTheme(cookie.Value) {
+		return cookie.Value
 	}
 	return themeClassic
+}
+
+func isSupportedTheme(theme string) bool {
+	for _, option := range themeOrder {
+		if option.name == theme {
+			return true
+		}
+	}
+	return false
 }
 
 func templatesForRequest(r *http.Request) uiTemplateSet {
@@ -83,14 +110,32 @@ func templatesForRequest(r *http.Request) uiTemplateSet {
 }
 
 func otherTheme(r *http.Request) string {
-	if requestTheme(r) == themeModern {
-		return themeClassic
+	current := requestTheme(r)
+	for i, option := range themeOrder {
+		if option.name == current {
+			return themeOrder[(i+1)%len(themeOrder)].name
+		}
 	}
-	return themeModern
+	return themeClassic
 }
 
 func themeSwitchURL(r *http.Request) string {
 	return "/theme?name=" + url.QueryEscape(otherTheme(r)) + "&next=" + url.QueryEscape(r.URL.RequestURI())
+}
+
+func themeOptions(r *http.Request) []ThemeOption {
+	current := requestTheme(r)
+	next := r.URL.RequestURI()
+	options := make([]ThemeOption, 0, len(themeOrder))
+	for _, option := range themeOrder {
+		options = append(options, ThemeOption{
+			Name:   option.name,
+			Label:  option.label,
+			Active: option.name == current,
+			URL:    "/theme?name=" + url.QueryEscape(option.name) + "&next=" + url.QueryEscape(next),
+		})
+	}
+	return options
 }
 
 func themeHandler(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +145,7 @@ func themeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	theme := r.URL.Query().Get("name")
-	if theme != themeClassic && theme != themeModern {
+	if !isSupportedTheme(theme) {
 		http.Error(w, "Unknown theme", http.StatusBadRequest)
 		return
 	}

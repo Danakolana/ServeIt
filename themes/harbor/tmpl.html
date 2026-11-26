@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.CurrentPath}} · ServeIt</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#f6f7fb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0f17" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="/static/harbor.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/"><span class="mark"><svg class="ic"><use href="#i-mark"/></svg></span>ServeIt</a>
+    <label class="search"><svg class="ic"><use href="#i-find"/></svg><input id="q" type="search" placeholder="Search this folder and below" autocomplete="off" spellcheck="false" aria-label="Search files"></label>
+    <div class="theme-picker" role="group" aria-label="Theme">{{range .ThemeOptions}}{{if .Active}}<span class="theme-choice active" aria-current="page">{{.Label}}</span>{{else}}<a class="theme-choice" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}</div>
+    <a class="link" href="/admin">Share</a>
+  </header>
+
+  <nav class="path" aria-label="Current folder">{{range $i,$c := .Parents}}{{if $i}}<i>/</i>{{end}}<a dir="auto" href="{{pathEscape $c.Path}}">{{if $i}}{{$c.Name}}{{else}}Files{{end}}</a>{{end}}</nav>
+
+  <main>
+    <div id="dirs">
+    {{if .Entries}}
+      <table class="list" id="t">
+        <thead><tr>
+          <th class="pk"><input type="checkbox" id="all" aria-label="Select all"></th>
+          <th data-k="name" aria-sort="ascending"><button type="button" class="sort">Name</button></th>
+          <th class="num" data-k="size"><button type="button" class="sort">Size</button></th>
+          <th class="when" data-k="mtime"><button type="button" class="sort">Modified</button></th>
+        </tr></thead>
+        <tbody>
+        {{range .Entries}}
+          <tr data-name="{{.Name}}" data-dir="{{if .IsDir}}1{{else}}0{{end}}" data-size="{{if .IsDir}}0{{else}}{{.Size}}{{end}}" data-mtime="{{.ModTime.Unix}}">
+            <td class="pk"><input class="pick" type="checkbox" value="{{.RelPath}}" aria-label="Select {{.Name}}"></td>
+            <td class="nm">{{if .IsDir}}<a dir="auto" href="/{{pathEscape .RelPath}}/"><svg class="ic dir"><use href="#i-dir"/></svg>{{.Name}}</a>{{else}}<a dir="auto" href="/{{pathEscape .RelPath}}" download><svg class="ic"><use href="#i-file"/></svg>{{.Name}}</a>{{end}}</td>
+            <td class="num">{{if .IsDir}}–{{else}}{{humanSize .Size}}{{end}}</td>
+            <td class="when">{{formatTime .ModTime}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+    {{else}}
+      <p class="empty">This folder is empty.</p>
+    {{end}}
+    </div>
+    <table class="list" id="found" hidden><tbody></tbody></table>
+    <p class="empty" id="none" hidden>Nothing matches.</p>
+  </main>
+
+  <footer class="foot"><a href="https://github.com/Danakolana/ServeIt" target="_blank" rel="noreferrer">ServeIt on GitHub</a></footer>
+</div>
+
+<div class="dock" id="dock"><span id="sum"></span><button type="button" class="btn ghost" id="clr">Clear</button><button type="button" class="btn" id="go">Download</button></div>
+<script src="/static/app.js"></script>
+<script src="/static/browse.js"></script>
+</body>
+</html>

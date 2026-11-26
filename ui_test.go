@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,18 +22,36 @@ func TestPathEscapePreservesSegments(t *testing.T) {
 	}
 }
 
-func TestBothUITemplateSetsParseAndRender(t *testing.T) {
+func TestAllUITemplateSetsParseAndRender(t *testing.T) {
 	if err := initTemplates(); err != nil {
 		t.Fatal(err)
 	}
-	data := PageData{CurrentPath: "/", Parents: []Crumb{{Name: "root", Path: "/"}}, ThemeSwitchURL: "/theme"}
-	for theme, marker := range map[string]string{themeClassic: "Modern UI", themeModern: "/static/app.css"} {
+	request := httptest.NewRequest(http.MethodGet, "/admin?path=docs", nil)
+	options := themeOptions(request)
+	entries := []Entry{{Name: "notes.txt", RelPath: "notes.txt", Size: 12, ModTime: time.Unix(1_700_000_000, 0)}}
+	page := PageData{CurrentPath: "/", Entries: entries, Parents: []Crumb{{Name: "root", Path: "/"}}, ThemeSwitchURL: themeSwitchURL(request), ThemeOptions: options}
+	admin := AdminPageData{CurrentPath: "docs", CurrentRel: "docs", Entries: entries, Parents: []Crumb{{Name: "Share", Path: "/"}}, ThemeSwitchURL: themeSwitchURL(request), ThemeOptions: options}
+	shared := SharedPageData{Token: "token", CurrentPath: "/", Entries: entries, Parents: []Crumb{{Name: "Shared with you", Path: "/"}}, RemainingSeconds: 60, HardRemainingSeconds: 120, IdleTimeoutMinutes: 15, ThemeSwitchURL: themeSwitchURL(request), ThemeOptions: options}
+	markers := map[string]string{themeClassic: "theme-picker", themeModern: "/static/app.css", themeHarbor: "/static/harbor.css"}
+	for theme, marker := range markers {
 		var output bytes.Buffer
-		if err := uiTemplates[theme].browse.Execute(&output, data); err != nil {
+		if err := uiTemplates[theme].browse.Execute(&output, page); err != nil {
 			t.Fatalf("render %s UI: %v", theme, err)
 		}
 		if !strings.Contains(output.String(), marker) {
 			t.Fatalf("rendered %s UI does not contain %q", theme, marker)
+		}
+		for name, templateData := range map[string]struct {
+			view *template.Template
+			data any
+		}{"admin": {uiTemplates[theme].admin, admin}, "share": {uiTemplates[theme].share, shared}} {
+			output.Reset()
+			if err := templateData.view.Execute(&output, templateData.data); err != nil {
+				t.Fatalf("render %s %s UI: %v", theme, name, err)
+			}
+			if !strings.Contains(output.String(), "theme-picker") {
+				t.Fatalf("rendered %s %s UI has no theme picker", theme, name)
+			}
 		}
 	}
 }
@@ -42,7 +61,7 @@ func TestUIRoutesArePublicAndReadOnly(t *testing.T) {
 	if err := registerUIRoutes(mux); err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"/static/app.css", "/favicon.ico"} {
+	for _, target := range []string{"/static/app.css", "/static/harbor.css", "/favicon.ico"} {
 		recorder := httptest.NewRecorder()
 		mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
 		if recorder.Code != http.StatusOK {
@@ -50,6 +69,12 @@ func TestUIRoutesArePublicAndReadOnly(t *testing.T) {
 		}
 		if got := recorder.Header().Get("Cache-Control"); got != "public, max-age=3600" {
 			t.Fatalf("GET %s Cache-Control = %q", target, got)
+		}
+		if target == "/static/harbor.css" && !strings.HasPrefix(recorder.Header().Get("Content-Type"), "text/css") {
+			t.Fatalf("Harbor stylesheet Content-Type = %q", recorder.Header().Get("Content-Type"))
+		}
+		if target == "/static/harbor.css" && !strings.Contains(recorder.Body.String(), "ServeIt — Harbor theme") {
+			t.Fatal("Harbor stylesheet was not served")
 		}
 	}
 
@@ -61,20 +86,48 @@ func TestUIRoutesArePublicAndReadOnly(t *testing.T) {
 }
 
 func TestThemeSwitchUsesCookieAndSafeLocalRedirect(t *testing.T) {
-	recorder := httptest.NewRecorder()
-	themeHandler(recorder, httptest.NewRequest(http.MethodGet, "/theme?name=modern&next=%2Fadmin%3Fpath%3Ddocs", nil))
-	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/admin?path=docs" {
-		t.Fatalf("theme switch returned status %d and Location %q", recorder.Code, recorder.Header().Get("Location"))
-	}
-	cookies := recorder.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != themeCookieName || cookies[0].Value != themeModern || !cookies[0].HttpOnly {
-		t.Fatalf("unexpected theme cookie: %#v", cookies)
+	for _, theme := range []string{themeClassic, themeModern, themeHarbor} {
+		recorder := httptest.NewRecorder()
+		themeHandler(recorder, httptest.NewRequest(http.MethodGet, "/theme?name="+theme+"&next=%2Fadmin%3Fpath%3Ddocs", nil))
+		if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/admin?path=docs" {
+			t.Fatalf("%s theme switch returned status %d and Location %q", theme, recorder.Code, recorder.Header().Get("Location"))
+		}
+		cookies := recorder.Result().Cookies()
+		if len(cookies) != 1 || cookies[0].Name != themeCookieName || cookies[0].Value != theme || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode {
+			t.Fatalf("unexpected %s theme cookie: %#v", theme, cookies)
+		}
 	}
 
-	recorder = httptest.NewRecorder()
-	themeHandler(recorder, httptest.NewRequest(http.MethodGet, "/theme?name=modern&next=https%3A%2F%2Fexample.com", nil))
-	if got := recorder.Header().Get("Location"); got != "/" {
-		t.Fatalf("external redirect was not rejected: %q", got)
+	for _, next := range []string{
+		"https%3A%2F%2Fexample.com",
+		"%2F%2Fevil.example.com%2Fpath",
+		"%2F%ZZ",
+		"https%3Aexample.com",
+	} {
+		recorder := httptest.NewRecorder()
+		themeHandler(recorder, httptest.NewRequest(http.MethodGet, "/theme?name=modern&next="+next, nil))
+		if got := recorder.Header().Get("Location"); got != "/" {
+			t.Fatalf("unsafe redirect %q was not rejected: %q", next, got)
+		}
+	}
+	for _, cookieValue := range []string{"", "invalid", themeClassic, themeModern, themeHarbor} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if cookieValue != "" {
+			req.AddCookie(&http.Cookie{Name: themeCookieName, Value: cookieValue})
+		}
+		got := requestTheme(req)
+		want := themeClassic
+		if isSupportedTheme(cookieValue) {
+			want = cookieValue
+		}
+		if got != want {
+			t.Fatalf("requestTheme(%q) = %q, want %q", cookieValue, got, want)
+		}
+	}
+	recorder := httptest.NewRecorder()
+	themeHandler(recorder, httptest.NewRequest(http.MethodGet, "/theme?name=invalid", nil))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid theme was accepted with status %d", recorder.Code)
 	}
 }
 
