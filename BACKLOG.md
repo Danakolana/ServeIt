@@ -95,26 +95,26 @@ The main browser currently mishandles several ordinary filesystem names. `http.S
 
 ## 8. Protect open-mode servers from accidental exposure and DNS rebinding
 
-**Status: pending. Priority: critical.**
+**Status: core protections implemented; follow-up hardening remains. Priority: critical.**
 
-No password is the default, arbitrary Host headers are accepted, and dotfiles are served like any other file. A browser can therefore reach an open server through DNS rebinding, and starting ServeIt in a home or project directory can expose `.env`, `.git`, `.ssh`, and similar content.
+No password is the default. ServeIt now validates Host headers, supports an explicit listen address and hidden-file policy, and prints an open-mode warning. The remaining work is to expand platform-specific coverage and test the edge cases below.
 
-- Validate the request Host before routing. Accept configured IP literals, loopback names, the machine hostname, and explicit names supplied by a repeatable `--allow-host` option. Reject other hosts consistently, including requests for files, search, shares, and admin APIs.
-- Replace the fixed IPv4-only bind with an explicit `--listen` address and support IPv6 listeners and bracketed IPv6 URLs. Preserve a predictable default and show every reachable address accurately at startup.
-- Hide any path segment beginning with `.` by default. Enforce this in direct file access, listings, search, share creation and browsing, ZIP planning, checks, and archive generation. Add `--show-hidden` as an explicit opt-in.
+- Validate the request Host before routing. Accept configured IP literals, loopback names, the machine hostname, and explicit names supplied by a repeatable `--allow-host` option. Reject other hosts consistently, including requests for files, search, shares, and admin APIs. **Implemented.**
+- Replace the fixed IPv4-only bind with an explicit `--listen` address and support IPv6 listeners and bracketed IPv6 URLs. Preserve a predictable default and show every reachable address accurately at startup. **Core listener option implemented; address display and platform coverage remain.**
+- Hide any path segment beginning with `.` by default. Enforce this in direct file access, listings, search, share creation and browsing, ZIP planning, checks, and archive generation. Add `--show-hidden` as an explicit opt-in. **Implemented.**
 - Continue reserving the share-state file even when hidden files are enabled. On case-insensitive filesystems, identify the actual state file with filesystem identity (`os.SameFile` or an equivalent resolved comparison) rather than a case-sensitive spelling check.
-- Print a concise startup warning when the full browser has no password. State whether hidden files are excluded and show the opt-in flag.
+- Print a concise startup warning when the full browser has no password. State whether hidden files are excluded and show the opt-in flag. **Implemented.**
 - Add DNS-rebinding-style Host tests and table-driven hidden-path tests, including nested dot directories, alternate state-file casing, symlinks, search, and ZIP requests.
 
 ## 9. Separate durable share state from the served directory
 
-**Status: pending. Priority: high.**
+**Status: partially implemented; follow-up durability work remains. Priority: high.**
 
 The state file is written inside the served root. Existing shares loaded from a read-only USB drive or mount fail on every view because activity persistence cannot create and rename the temporary file; the resulting storage error is currently reported as “Share link not found.” Invalid JSON also aborts startup, and every view rewrites the complete file while expired and revoked records accumulate forever.
 
 - Add an explicit `--state-file` option and environment equivalent. Choose a writable per-user default keyed by the canonical served root, with a documented compatibility or one-time migration path for existing state files.
 - Keep share creation and revocation durable before reporting success. Coalesce page-view, download-count, and idle-expiry writes over a short bounded interval, flush them during graceful shutdown, and document the maximum counter/activity loss after a crash.
-- Never mutate the in-memory record permanently when persistence fails. Return a distinct internal/storage error and show an accurate 500 response instead of “not found.”
+- Never mutate the in-memory record permanently when persistence fails. Return a distinct internal/storage error and show an accurate 5xx response instead of “not found.” **Implemented for activity updates and revocation.**
 - If the state JSON is corrupt, atomically quarantine it with a timestamped backup name, start with an empty store, and print a warning containing the recovery path. Do not overwrite the only corrupt copy.
 - Prune revoked and long-expired shares using a documented retention window so the file and admin response stay bounded.
 - Test read-only roots, unwritable state destinations, interrupted writes, corrupt JSON recovery, restart persistence, migration, and pruning.

@@ -117,7 +117,7 @@ func validateDownloadPaths(paths []string, allow func(string) bool) error {
 	}
 	for _, raw := range paths {
 		rel, err := cleanShareRel(raw, false)
-		if err != nil || isShareStatePath(rel) {
+		if err != nil || isShareStatePath(rel) || isHiddenPath(rel) {
 			return fmt.Errorf("invalid path: %s", raw)
 		}
 		if allow != nil && !allow(rel) {
@@ -293,6 +293,12 @@ func collectZipEntries(paths []string, allow func(string) bool) ([]zipEntry, int
 			if err != nil {
 				return err
 			}
+			if isHiddenPath(filepath.ToSlash(child)) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 			if isShareStatePath(child) {
 				if d.IsDir() {
 					return filepath.SkipDir
@@ -328,7 +334,7 @@ func collectZipEntries(paths []string, allow func(string) bool) ([]zipEntry, int
 	}
 	for _, raw := range paths {
 		rel, err := cleanShareRel(raw, false)
-		if err != nil || isShareStatePath(rel) {
+		if err != nil || isShareStatePath(rel) || isHiddenPath(rel) {
 			return nil, 0, fmt.Errorf("invalid path: %s", raw)
 		}
 		if seenPath[rel] {

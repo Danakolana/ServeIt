@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -106,6 +108,77 @@ func TestPublicURLAndAdminMutationChecks(t *testing.T) {
 	publicBaseURL = "https://public.example.test"
 	if got := requestBaseURL(httptest.NewRequest(http.MethodGet, "http://attacker.example.test/admin", nil)); got != publicBaseURL {
 		t.Fatalf("requestBaseURL() = %q, want %q", got, publicBaseURL)
+	}
+}
+
+func TestHostValidationAndHiddenPathDefaults(t *testing.T) {
+	previousHosts, previousHidden := allowedHosts, showHidden
+	t.Cleanup(func() { allowedHosts, showHidden = previousHosts, previousHidden })
+	allowedHosts = buildAllowedHosts("127.0.0.1", []string{"files.example.test"})
+	showHidden = false
+	if !hostAllowed("files.example.test:8080") || hostAllowed("attacker.example.test:8080") {
+		t.Fatal("unexpected Host validation result")
+	}
+	if !isHiddenPath(".env") || !isHiddenPath("project/.git/config") || isHiddenPath("project/readme.md") {
+		t.Fatal("unexpected hidden path classification")
+	}
+	showHidden = true
+	if isHiddenPath(".env") {
+		t.Fatal("hidden path was not enabled by showHidden")
+	}
+}
+
+func TestHiddenPathsAreExcludedAcrossAccessPaths(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "visible.txt"), []byte("visible"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previousHidden := showHidden
+	showHidden = false
+	t.Cleanup(func() { showHidden = previousHidden })
+	restoreRoot(t, dir)
+
+	entries, err := readDir(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name, ".") {
+			t.Fatalf("hidden entry listed: %q", entry.Name)
+		}
+	}
+	if _, err := normalizeShareItems([]string{".env"}); err == nil {
+		t.Fatal("hidden file could be selected for sharing")
+	}
+	if _, _, err := collectZipEntries([]string{".env"}, nil); err == nil {
+		t.Fatal("hidden file could be added to a ZIP")
+	}
+	recorder := httptest.NewRecorder()
+	searchHandler(recorder, httptest.NewRequest(http.MethodGet, "/search?q=env", nil))
+	if strings.Contains(recorder.Body.String(), ".env") {
+		t.Fatal("hidden file appeared in search results")
+	}
+}
+
+func TestShareUseRollsBackWhenPersistenceFails(t *testing.T) {
+	dir := t.TempDir()
+	share := &Share{ID: "id", Token: "token", LastActivityAt: time.Unix(100, 0), ExpiresAt: time.Now().Add(time.Hour), HardExpiresAt: time.Now().Add(2 * time.Hour), IdleTimeoutMinutes: 10}
+	before := *share
+	store := &ShareStore{path: filepath.Join(dir, "missing", "state.json"), shares: []*Share{share}}
+	if _, err := store.Use("token", "", false); !errors.Is(err, errShareStorage) {
+		t.Fatalf("Use() error = %v, want storage error", err)
+	}
+	if !reflect.DeepEqual(*share, before) {
+		t.Fatal("share was mutated after persistence failure")
+	}
+	if err := store.Revoke("id"); !errors.Is(err, errShareStorage) {
+		t.Fatalf("Revoke() error = %v, want storage error", err)
+	}
+	if share.Revoked {
+		t.Fatal("share was revoked after persistence failure")
 	}
 }
 

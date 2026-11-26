@@ -50,7 +50,7 @@ That is enough: running `./ServeIt` or `.\ServeIt.exe` with no arguments immedia
 ServeIt prints the address, QR code, authentication state, and admin credentials when it starts. Open the address from another device on the same Wi-Fi or Ethernet network.
 
 > [!CAUTION]
-> The main browser has no password by default and includes dotfiles. Point `--dir` at a dedicated sharing folder instead of your home directory or a source repository. See [Security model](#security-model).
+> The main browser has no password by default. Hidden files are excluded unless `--show-hidden` is set. Point `--dir` at a dedicated sharing folder instead of your home directory or a source repository. See [Security model](#security-model).
 
 ## Latest binaries
 
@@ -94,6 +94,7 @@ On macOS, use `shasum -a 256 -c -` in place of `sha256sum -c -` and select the c
 ./ServeIt
 ./ServeIt --dir /home/user/files --port 9000
 ./ServeIt --dir /data --port 8888 --password guest --admin-password separate-secret
+./ServeIt --listen 127.0.0.1 --show-hidden
 ```
 
 On Windows, use `ServeIt.exe`; the flags are the same.
@@ -101,14 +102,19 @@ On Windows, use `ServeIt.exe`; the flags are the same.
 | Flag | Default | Purpose |
 |---|---|---|
 | `--dir` | `.` | Root directory exposed by the main browser. Guest links remain limited to their selected items. |
-| `--port` | `8080` | TCP port. ServeIt currently listens on all IPv4 interfaces. |
+| `--port` | `8080` | TCP port. |
+| `--listen` | `0.0.0.0` | IP address to bind. Use `127.0.0.1` for local-only access or `::` for an IPv6 listener. |
 | `--password` | empty | Basic-auth password for the main browser and search. The username is `admin`. Empty means open access on the LAN. |
 | `--admin-password` | see description | Password for `/admin`, with username `admin`. If omitted, ServeIt reuses `--password`; if both are empty, it generates and prints a random password. |
 | `--public-url` | auto-detected LAN URL | Canonical `http://` or `https://` origin used in guest links and QR codes. Set this when ServeIt is behind a reverse proxy. |
+| `--allow-host` | local names and addresses | Additional Host name or IP accepted by the server. Repeat the flag for multiple names. |
+| `--show-hidden` | false | Include path segments beginning with `.` in browsing, search, shares, and downloads. |
 
 Startup QR codes are generated only for `192.168.x.x` addresses. Docker, VM, link-local, and other interface ranges are skipped to reduce the chance of scanning an unusable address. If no `192.168` address exists, ServeIt displays `127.0.0.1` for local access. Guest-link QR codes use `--public-url` when it is configured.
 
 When `--public-url` is set, it is used instead of request headers, so a forged `Host` or `X-Forwarded-Proto` header cannot change generated links.
+
+ServeIt rejects unexpected Host headers to reduce DNS-rebinding exposure. If you access it through a local DNS name, add that name with `--allow-host`. Binding to `127.0.0.1` keeps the server local to the machine.
 
 Search walks are cancellable and limited to four concurrent filesystem walks, with results capped at 200 matches. ZIP downloads are capped at 100,000 entries or 10 GiB per request.
 
@@ -144,7 +150,7 @@ ServeIt focuses on temporary, selective, read-only sharing. Other tools may be a
 ServeIt is intended for a trusted local network. It is not hardened for direct exposure to the public Internet.
 
 - **HTTP is unencrypted.** Basic authentication controls access but does not encrypt passwords, share URLs, or files in transit. Use an HTTPS reverse proxy or tunnel if the network is not trusted.
-- **The main browser exposes the whole configured root.** With no `--password`, anyone who can reach the server can browse and download it. Dotfiles are currently included, so use a dedicated directory.
+- **The main browser exposes the whole configured root.** With no `--password`, anyone who can reach the server can browse and download it. Hidden path segments are excluded by default; use `--show-hidden` only when that is intentional.
 - **Guest links are the isolation boundary.** A guest can access only the files and folder descendants selected when the link was created. Anyone who obtains the URL can use it until it expires or is revoked.
 - **Admin credentials matter.** If `--admin-password` is omitted while `--password` is set, the same password protects both areas. Pass a separate admin password when the main-browser password is shared with other people.
 - **Admin mutations use same-origin request checks.** Share creation and revocation require the admin request header and JSON content type, and reject a mismatched `Origin` when one is supplied.

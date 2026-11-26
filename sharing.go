@@ -103,6 +103,7 @@ var (
 	errShareNotFound = errors.New("share not found")
 	errShareExpired  = errors.New("share expired")
 	errShareDenied   = errors.New("path is not included in this share")
+	errShareStorage  = errors.New("share storage unavailable")
 )
 
 func initSharing(configuredPassword string) error {
@@ -206,7 +207,7 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rel, err := cleanShareRel(r.URL.Query().Get("path"), true)
-	if err != nil || isShareStatePath(rel) {
+	if err != nil || isShareStatePath(rel) || isHiddenPath(rel) {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
@@ -300,6 +301,10 @@ func shareItemHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := shareStore.Revoke(id); err != nil {
+		if errors.Is(err, errShareStorage) {
+			writeShareError(w, http.StatusServiceUnavailable, "The share state could not be saved. Try again.")
+			return
+		}
 		writeShareError(w, http.StatusNotFound, "Share not found")
 		return
 	}
@@ -327,7 +332,7 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rel, err := cleanShareRel(r.URL.Query().Get("path"), true)
-	if err != nil || isShareStatePath(rel) || (rel != "" && !shareAllows(&shared, rel)) {
+	if err != nil || isShareStatePath(rel) || isHiddenPath(rel) || (rel != "" && !shareAllows(&shared, rel)) {
 		http.Error(w, "This path is not included in the share.", http.StatusForbidden)
 		return
 	}
@@ -350,8 +355,9 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 				serveShareError(w, err)
 				return
 			}
-			w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": info.Name()}))
-			http.ServeFile(w, r, abs)
+			if err := serveRootFile(w, r, rel); err != nil {
+				http.NotFound(w, r)
+			}
 			return
 		}
 		entries, err = readDir(abs, rel)
@@ -407,7 +413,7 @@ func normalizeShareItems(paths []string) ([]ShareItem, error) {
 	items := make([]ShareItem, 0, len(paths))
 	for _, raw := range paths {
 		rel, err := cleanShareRel(raw, false)
-		if err != nil || isShareStatePath(rel) {
+		if err != nil || isShareStatePath(rel) || isHiddenPath(rel) {
 			return nil, fmt.Errorf("invalid path: %s", raw)
 		}
 		if seen[rel] {
@@ -430,6 +436,9 @@ func normalizeShareItems(paths []string) ([]ShareItem, error) {
 func selectedEntries(shared *Share) []Entry {
 	entries := make([]Entry, 0, len(shared.Items))
 	for _, item := range shared.Items {
+		if isHiddenPath(item.Path) {
+			continue
+		}
 		abs, err := secureResolve(item.Path)
 		if err != nil {
 			continue
@@ -450,6 +459,9 @@ func selectedEntries(shared *Share) []Entry {
 }
 
 func shareAllows(shared *Share, rel string) bool {
+	if isHiddenPath(rel) {
+		return false
+	}
 	requested, err := secureResolve(rel)
 	if err != nil {
 		return false
@@ -650,6 +662,7 @@ func (store *ShareStore) Use(token, rel string, download bool) (Share, error) {
 		if rel != "" && !shareAllows(item, rel) {
 			return Share{}, errShareDenied
 		}
+		before := *item
 		item.LastActivityAt = now
 		item.ExpiresAt = now.Add(time.Duration(item.IdleTimeoutMinutes) * time.Minute)
 		if item.ExpiresAt.After(item.HardExpiresAt) {
@@ -661,7 +674,8 @@ func (store *ShareStore) Use(token, rel string, download bool) (Share, error) {
 			item.PageViews++
 		}
 		if err := store.persistLocked(); err != nil {
-			return Share{}, err
+			*item = before
+			return Share{}, fmt.Errorf("%w: %v", errShareStorage, err)
 		}
 		copy := *item
 		copy.Items = append([]ShareItem(nil), item.Items...)
@@ -675,8 +689,13 @@ func (store *ShareStore) Revoke(id string) error {
 	defer store.mu.Unlock()
 	for _, item := range store.shares {
 		if item.ID == id {
+			before := *item
 			item.Revoked = true
-			return store.persistLocked()
+			if err := store.persistLocked(); err != nil {
+				*item = before
+				return fmt.Errorf("%w: %v", errShareStorage, err)
+			}
+			return nil
 		}
 	}
 	return errShareNotFound
@@ -785,6 +804,10 @@ func writeShareError(w http.ResponseWriter, status int, message string) {
 }
 
 func serveShareError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errShareStorage) {
+		http.Error(w, "The share state could not be saved. Try again.", http.StatusServiceUnavailable)
+		return
+	}
 	if errors.Is(err, errShareExpired) {
 		http.Error(w, "This share link has expired or was revoked.", http.StatusGone)
 		return
@@ -826,11 +849,16 @@ func renderStartup(port string, width int) string {
 	}
 	facts := [][2]string{
 		{"Directory", root},
+		{"Listen", serverAddress},
 		{"Port", port},
 		{"File browser", browser},
+		{"Hidden files", map[bool]string{true: "included (--show-hidden)", false: "excluded by default"}[showHidden]},
 		{"Admin user", "admin"},
 		{"Admin password", secret},
 		{"Stop", "Ctrl+C"},
+	}
+	if password == "" {
+		facts = append(facts, [2]string{"Warning", "main browser has no password; use --password for shared networks"})
 	}
 	urls, skipped := discoverLANURLs(port)
 	if skipped > 0 {

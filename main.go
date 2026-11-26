@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -60,10 +61,22 @@ const (
 // ─── globals ─────────────────────────────────────────────────────────────────
 
 var (
-	root        string
-	password    string
-	searchSlots = make(chan struct{}, maxConcurrentSearches)
+	root          string
+	password      string
+	showHidden    bool
+	allowedHosts  map[string]struct{}
+	serverAddress string
+	searchSlots   = make(chan struct{}, maxConcurrentSearches)
 )
+
+type stringListFlag []string
+
+func (f *stringListFlag) String() string { return strings.Join(*f, ",") }
+
+func (f *stringListFlag) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
 
 // ─── main ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +85,10 @@ func main() {
 	pass := flag.String("password", "", "basic-auth password (username is always 'admin'); leave empty to disable auth")
 	adminPass := flag.String("admin-password", "", "super-admin password (username is always 'admin'); generated when omitted")
 	publicURLFlag := flag.String("public-url", "", "canonical http(s) origin used in guest links and QR codes")
+	listenAddressFlag := flag.String("listen", "0.0.0.0", "IP address to listen on")
+	showHiddenFlag := flag.Bool("show-hidden", false, "include files and folders whose path segment starts with '.'")
+	var allowHostFlags stringListFlag
+	flag.Var(&allowHostFlags, "allow-host", "additional Host name or IP accepted by the server (repeatable)")
 	dir := flag.String("dir", ".", "directory to serve")
 	flag.Parse()
 
@@ -81,10 +98,18 @@ func main() {
 		log.Fatalf("cannot resolve directory: %v", err)
 	}
 	password = *pass
+	showHidden = *showHiddenFlag
 	serverPort = *port
+	serverAddress = *listenAddressFlag
+	allowedHosts = buildAllowedHosts(serverAddress, allowHostFlags)
 	publicBaseURL, err = normalizePublicURL(*publicURLFlag)
 	if err != nil {
 		log.Fatalf("invalid --public-url: %v", err)
+	}
+	if publicBaseURL != "" {
+		if parsed, parseErr := url.Parse(publicBaseURL); parseErr == nil {
+			allowedHosts[canonicalHost(parsed.Host)] = struct{}{}
+		}
 	}
 	if err := initSharing(*adminPass); err != nil {
 		log.Fatalf("cannot initialize sharing: %v", err)
@@ -107,13 +132,13 @@ func main() {
 	mux.HandleFunc("/search", withAuth(searchHandler))
 	mux.HandleFunc("/", withAuth(browseHandler))
 
-	listener, err := net.Listen("tcp", "0.0.0.0:"+*port)
+	listener, err := net.Listen("tcp", net.JoinHostPort(serverAddress, *port))
 	if err != nil {
 		log.Fatalf("cannot listen on port %s: %v", *port, err)
 	}
 	printStartup(*port)
 	server := &http.Server{
-		Handler:           securityHeaders(mux),
+		Handler:           hostValidation(securityHeaders(mux)),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	if err := server.Serve(listener); err != nil {
@@ -137,11 +162,97 @@ func withAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func hostValidation(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !hostAllowed(r.Host) {
+			http.Error(w, "Invalid Host header", http.StatusMisdirectedRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func hostAllowed(value string) bool {
+	host := canonicalHost(value)
+	if host == "" {
+		return false
+	}
+	_, ok := allowedHosts[host]
+	return ok
+}
+
+func canonicalHost(value string) string {
+	value = strings.TrimSpace(strings.TrimSuffix(value, "."))
+	if value == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	} else if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
+		value = strings.Trim(value, "[]")
+	}
+	if ip := net.ParseIP(value); ip != nil {
+		return strings.ToLower(ip.String())
+	}
+	return strings.ToLower(strings.TrimSuffix(value, "."))
+}
+
+func buildAllowedHosts(listenAddress string, explicit []string) map[string]struct{} {
+	allowed := map[string]struct{}{
+		"localhost": {},
+		"127.0.0.1": {},
+		"::1":       {},
+	}
+	if hostname, err := os.Hostname(); err == nil {
+		if host := canonicalHost(hostname); host != "" {
+			allowed[host] = struct{}{}
+		}
+	}
+	if host := canonicalHost(listenAddress); host != "" && host != "0.0.0.0" && host != "::" {
+		allowed[host] = struct{}{}
+	}
+	if interfaces, err := net.Interfaces(); err == nil {
+		for _, networkInterface := range interfaces {
+			addresses, _ := networkInterface.Addrs()
+			for _, address := range addresses {
+				var ip net.IP
+				switch value := address.(type) {
+				case *net.IPNet:
+					ip = value.IP
+				case *net.IPAddr:
+					ip = value.IP
+				}
+				if ip != nil {
+					allowed[canonicalHost(ip.String())] = struct{}{}
+				}
+			}
+		}
+	}
+	for _, value := range explicit {
+		if host := canonicalHost(value); host != "" {
+			allowed[host] = struct{}{}
+		}
+	}
+	return allowed
+}
+
+func isHiddenPath(rel string) bool {
+	if showHidden {
+		return false
+	}
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		if part != "" && strings.HasPrefix(part, ".") {
+			return true
+		}
+	}
+	return false
+}
+
 // ─── browse handler ───────────────────────────────────────────────────────────
 
 func browseHandler(w http.ResponseWriter, r *http.Request) {
 	rel, err := cleanShareRel(strings.TrimPrefix(r.URL.Path, "/"), true)
-	if err != nil || isShareStatePath(rel) {
+	if err != nil || isShareStatePath(rel) || isHiddenPath(rel) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -159,8 +270,9 @@ func browseHandler(w http.ResponseWriter, r *http.Request) {
 
 	// if it's a file, serve it for download
 	if !info.IsDir() {
-		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": info.Name()}))
-		http.ServeFile(w, r, abs)
+		if err := serveRootFile(w, r, rel); err != nil {
+			http.NotFound(w, r)
+		}
 		return
 	}
 
@@ -184,6 +296,29 @@ func browseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func serveRootFile(w http.ResponseWriter, r *http.Request, rel string) error {
+	rootHandle, err := os.OpenRoot(resolvedRoot)
+	if err != nil {
+		return err
+	}
+	defer rootHandle.Close()
+	file, err := rootHandle.Open(filepath.FromSlash(rel))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("path is a directory")
+	}
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": info.Name()}))
+	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+	return nil
+}
+
 func readDir(abs, rel string) ([]Entry, error) {
 	dirEntries, err := os.ReadDir(abs)
 	if err != nil {
@@ -193,6 +328,9 @@ func readDir(abs, rel string) ([]Entry, error) {
 	var entries []Entry
 	for _, de := range dirEntries {
 		relPath := filepath.ToSlash(filepath.Join(rel, de.Name()))
+		if isHiddenPath(relPath) {
+			continue
+		}
 		if _, err := secureResolve(relPath); err != nil {
 			continue
 		}
@@ -260,6 +398,12 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		relPath, _ := filepath.Rel(root, path)
 		if isShareStatePath(filepath.ToSlash(relPath)) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if isHiddenPath(filepath.ToSlash(relPath)) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
