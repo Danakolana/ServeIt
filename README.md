@@ -8,7 +8,11 @@
 
 ![ServeIt startup panel and file browser](docs/startup-and-browser.png)
 
-![ServeIt workflow demo](docs/demo.gif)
+![ServeIt startup console QR and partial sharing workflow](docs/demo.gif)
+
+The demo deliberately selects only **3 files and 1 folder** from a larger list. Unchecked siblings stay outside the temporary guest link.
+
+ServeIt also prints a scannable LAN QR code in the console at startup, so another device can open the browser immediately.
 
 ServeIt turns a folder into a clean web interface for devices on the same network. Browse and search the full served folder, or create a temporary guest link containing only selected files and directories. There is no runtime, package manager, account system, or installation directory.
 

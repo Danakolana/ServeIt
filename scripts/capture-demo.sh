@@ -25,6 +25,8 @@ mkdir -p "$FIXTURE/Project/Photos"
 printf 'Project brief\n' > "$FIXTURE/Project/brief.pdf"
 printf 'category,total\ntravel,3\n' > "$FIXTURE/Project/budget.csv"
 printf 'Bring the signed copy.\n' > "$FIXTURE/Project/notes.txt"
+printf 'Unselected draft.\n' > "$FIXTURE/Project/draft.txt"
+printf 'Unselected archive.\n' > "$FIXTURE/Project/archive.zip"
 printf 'photo placeholder one\n' > "$FIXTURE/Project/Photos/one.jpg"
 printf 'photo placeholder two\n' > "$FIXTURE/Project/Photos/two.jpg"
 
@@ -58,6 +60,7 @@ python3 "$ROOT/scripts/capture-demo.py" \
   --base-url "http://127.0.0.1:$PORT" \
   --cdp-port "$CDP_PORT" \
   --admin-password "$ADMIN_PASS" \
+  --startup-log "$FRAME_DIR/server.log" \
   --out "$FRAME_DIR"
 
 python3 - "$FRAME_DIR" <<'PY'

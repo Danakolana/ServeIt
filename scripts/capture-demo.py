@@ -156,22 +156,34 @@ def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(f"/usr/share/fonts/truetype/dejavu/{name}", size)
 
 
-def startup_frame(path: Path) -> None:
+def mono_font(size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", size)
+
+
+def startup_frame(path: Path, log_path: Path) -> None:
+    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
     image = Image.new("RGB", (1200, 760), "#0d1117")
     draw = ImageDraw.Draw(image)
     draw.rounded_rectangle((46, 44, 1154, 716), radius=22, fill="#161b22", outline="#30363d", width=2)
     draw.rectangle((46, 44, 1154, 94), fill="#21262d")
     for x, color in ((77, "#ff5f57"), (101, "#febc2e"), (125, "#28c840")):
         draw.ellipse((x - 7, 63 - 7, x + 7, 63 + 7), fill=color)
-    draw.text((170, 51), "ServeIt · terminal", fill="#8b949e", font=font(19, True))
-    draw.text((88, 142), "$ ./ServeIt --dir ~/Shared", fill="#79c0ff", font=font(26, True))
-    draw.text((88, 208), "Server ready", fill="#56d364", font=font(48, True))
-    draw.text((88, 282), "Share selected files with a guest link in seconds.", fill="#c9d1d9", font=font(25))
-    draw.rounded_rectangle((88, 362, 1112, 442), radius=12, fill="#0d1117", outline="#30363d")
-    draw.text((114, 383), "Admin:  http://127.0.0.1:8080/admin", fill="#d2a8ff", font=font(24, True))
-    draw.rounded_rectangle((88, 474, 1112, 598), radius=12, fill="#0d1117", outline="#30363d")
-    draw.text((114, 497), "Selective shares  ·  Expiring links  ·  QR ready", fill="#ffa657", font=font(23, True))
-    draw.text((114, 546), "Open the admin panel from any device on your LAN.", fill="#8b949e", font=font(21))
+    draw.text((170, 51), "ServeIt · actual startup console", fill="#8b949e", font=font(19, True))
+    y = 108
+    terminal_font = mono_font(11)
+    for line in lines[:34]:
+        if "█" in line or "▀" in line or "▄" in line:
+            color = "#f0f6fc"
+        elif line.startswith("http://") or line.startswith("192.168"):
+            color = "#79c0ff"
+        elif line.startswith("+") or line.startswith("|"):
+            color = "#c9d1d9"
+        else:
+            color = "#8b949e"
+        draw.text((68, y), line, fill=color, font=terminal_font)
+        y += 17
     image.save(path)
 
 
@@ -196,10 +208,11 @@ def main() -> None:
     parser.add_argument("--cdp-port", type=int, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--admin-password", default="adminpass")
+    parser.add_argument("--startup-log", type=Path, required=True)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     base_url = args.base_url.rstrip("/")
-    startup_frame(args.out / "01-startup.png")
+    startup_frame(args.out / "01-startup.png", args.startup_log)
 
     browser = WebSocket(browser_target(args.cdp_port))
     try:
@@ -218,7 +231,7 @@ def main() -> None:
         browser.screenshot(args.out / "02-admin.png")
 
         browser.navigate(base_url + "/admin?path=Project")
-        wait_for(browser, "document.querySelectorAll('#t .pick').length >= 4")
+        wait_for(browser, "document.querySelectorAll('#t .pick').length >= 6")
         browser.screenshot(args.out / "03-folder.png")
 
         browser.evaluate(
@@ -245,10 +258,16 @@ def main() -> None:
         browser.screenshot(args.out / "06-phone-raw.png")
         phone_frame(args.out / "06-phone-raw.png", args.out / "06-phone.png", "Scan QR → guest link")
 
-        browser.evaluate("document.querySelector('#all').click()")
-        wait_for(browser, "document.querySelector('#dock').classList.contains('on') && document.querySelectorAll('#t .pick:checked').length >= 4")
+        browser.evaluate(
+            """(() => {
+                const wanted = new Set(['Project/Photos','Project/brief.pdf','Project/budget.csv']);
+                document.querySelectorAll('#t .pick').forEach(p => { if (wanted.has(p.value)) { p.click(); } });
+                return true;
+            })()"""
+        )
+        wait_for(browser, "document.querySelector('#dock').classList.contains('on') && document.querySelectorAll('#t .pick:checked').length === 3")
         browser.screenshot(args.out / "07-phone-selected-raw.png")
-        phone_frame(args.out / "07-phone-selected-raw.png", args.out / "07-phone-selected.png", "Select files to download")
+        phone_frame(args.out / "07-phone-selected-raw.png", args.out / "07-phone-selected.png", "Select only what you need")
 
         browser.evaluate("document.querySelector('#go').click()")
         time.sleep(0.8)
