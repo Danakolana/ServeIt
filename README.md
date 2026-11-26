@@ -8,6 +8,8 @@
 
 ![ServeIt startup panel and file browser](docs/startup-and-browser.png)
 
+![ServeIt workflow demo](docs/demo.gif)
+
 ServeIt turns a folder into a clean web interface for devices on the same network. Browse and search the full served folder, or create a temporary guest link containing only selected files and directories. There is no runtime, package manager, account system, or installation directory.
 
 The original Classic interface remains the default. Use the **Modern UI** link in the browser, admin page, or guest page to switch to the optional modern theme; ServeIt remembers the choice in that browser.
