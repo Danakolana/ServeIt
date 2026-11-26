@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -14,10 +16,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -34,6 +38,25 @@ type Entry struct {
 	IsDir   bool
 	Size    int64
 	ModTime time.Time
+}
+
+type responseStatusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *responseStatusWriter) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *responseStatusWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(data)
 }
 
 type PageData struct {
@@ -213,8 +236,51 @@ func main() {
 		Handler:           hostValidation(securityHeaders(mux)),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	if err := server.Serve(listener); err != nil {
+	if err := serveWithSignals(server, listener); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func serveWithSignals(server *http.Server, listener net.Listener) error {
+	signals := make(chan os.Signal, 2)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	return serveWithSignalChannel(server, listener, signals)
+}
+
+func serveWithSignalChannel(server *http.Server, listener net.Listener, signals <-chan os.Signal) error {
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.Serve(listener) }()
+	select {
+	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-signals:
+		log.Print("shutdown requested; active transfers are draining (press Ctrl+C again to force exit)")
+		shutdownDone := make(chan error, 1)
+		go func() { shutdownDone <- server.Shutdown(context.Background()) }()
+		select {
+		case err := <-shutdownDone:
+			if err != nil {
+				log.Printf("graceful shutdown: %v", err)
+			}
+		case <-signals:
+			log.Print("second shutdown signal; forcing active transfers to stop")
+			_ = server.Close()
+			<-shutdownDone
+		}
+		if shareStore != nil {
+			if err := shareStore.Flush(); err != nil {
+				log.Printf("share state flush during shutdown: %v", err)
+			}
+		}
+		err := <-serveErr
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
 	}
 }
 

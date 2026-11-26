@@ -108,22 +108,22 @@ No password is the default. ServeIt now validates Host headers, supports an expl
 
 ## 9. Separate durable share state from the served directory
 
-**Status: partially implemented; follow-up durability work remains. Priority: high.**
+**Status: state isolation, pruning, and shutdown flushing implemented; activity coalescing remains. Priority: high.**
 
-The state file is written inside the served root. Existing shares loaded from a read-only USB drive or mount fail on every view because activity persistence cannot create and rename the temporary file; the resulting storage error is currently reported as “Share link not found.” Invalid JSON also aborts startup, and every view rewrites the complete file while expired and revoked records accumulate forever.
+Older releases wrote state inside the served root. Existing shares loaded from a read-only USB drive or mount failed on every view because activity persistence could not create and rename the temporary file; invalid JSON also aborted startup, and every view rewrote the complete file while expired and revoked records accumulated forever. The remaining persistence work is bounded coalescing for activity updates.
 
 - Add an explicit `--state-file` option and environment equivalent. Choose a writable per-user default keyed by the canonical served root, with a documented compatibility or one-time migration path for existing state files. **Implemented with `SERVEIT_STATE_FILE`, per-user root-keyed defaults, and legacy-file migration.**
 - Keep share creation and revocation durable before reporting success. Coalesce page-view, download-count, and idle-expiry writes over a short bounded interval, flush them during graceful shutdown, and document the maximum counter/activity loss after a crash.
 - Never mutate the in-memory record permanently when persistence fails. Return a distinct internal/storage error and show an accurate 5xx response instead of “not found.” **Implemented for activity updates and revocation.**
 - If the state JSON is corrupt, atomically quarantine it with a timestamped backup name, start with an empty store, and print a warning containing the recovery path. Do not overwrite the only corrupt copy. **Implemented.**
-- Prune revoked and long-expired shares using a documented retention window so the file and admin response stay bounded.
-- Test read-only roots, unwritable state destinations, interrupted writes, corrupt JSON recovery, restart persistence, migration, and pruning.
+- Prune revoked and long-expired shares using a documented retention window so the file and admin response stay bounded. **Implemented with a 30-day retention window.**
+- Test read-only roots, unwritable state destinations, interrupted writes, corrupt JSON recovery, restart persistence, migration, and pruning. **Pruning and persistence failure coverage implemented.**
 
 ## 10. Harden authentication and HTTP trust boundaries
 
 **Status: security baseline implemented; CSP and broader test coverage remain. Priority: high.**
 
-The browser password becomes the admin password when `--admin-password` is omitted, secrets can only be supplied on the command line, comparisons are ordinary string comparisons, and failed authentication has no rate limit. The API also trusts `X-Forwarded-Proto` from any client and accepts an admin JSON body regardless of Content-Type.
+The browser and admin doors now support separate credentials, constant-time checks, bounded failure throttling, same-origin mutation checks, and a restrictive script policy. Broader authentication and proxy test coverage remains.
 
 - Always generate a separate admin password unless the owner explicitly supplies one. Do not reuse the browser password implicitly. **Implemented.**
 - Support `SERVEIT_PASSWORD`, `SERVEIT_ADMIN_PASSWORD`, and restrictive password-file options. Define and test precedence without printing supplied secrets outside the existing startup credential panel. **Implemented.**
@@ -135,11 +135,11 @@ The browser password becomes the admin password when `--admin-password` is omitt
 
 ## 11. Correct share activity, countdowns, and admin polling cost
 
-**Status: download counting and lazy QR generation implemented; broader activity tests remain. Priority: medium.**
+**Status: download counting, server baselines, and lazy QR generation implemented; broader activity tests remain. Priority: medium.**
 
-HEAD requests and every Range request for a shared file currently increment the download counter and rewrite state. The guest and admin countdowns subtract server timestamps from `Date.now()`, so a device with a bad clock can show a valid link as expired. Every 15-second admin poll also regenerates a PNG QR code for every share.
+Download counters now exclude HEAD and Range requests, countdowns use server-provided baselines, and QR generation is lazy. Broader activity tests and lighter polling remain.
 
-- Define a download as an initial successful GET. Do not count HEAD requests, and prevent video seeking or resume ranges from inflating the counter. Document the chosen resume behavior and test it with multiple Range requests. **Implemented for HEAD and Range requests.**
+- Define a download as an initial successful GET. Do not count HEAD requests, and prevent video seeking or resume ranges from inflating the counter. Document the chosen resume behavior and test it with multiple Range requests. **Implemented for successful non-Range GETs; HEAD and Range requests are not counted.**
 - Send server-derived remaining seconds to both pages. Decrement from that baseline with a monotonic browser timer; refresh the baseline after server activity instead of depending on the wall clock of the phone or computer.
 - Remove QR image generation from the share-list response. Generate or cache a QR only when the user opens its modal, using a small authenticated endpoint. **Implemented.**
 - Document that revocation blocks new requests but does not recall bytes already sent on an established transfer. Do not add per-chunk store locking merely to terminate active transfers.
@@ -160,12 +160,12 @@ The module path now matches the GitHub repository. The release workflow still ne
 
 ## 13. Reduce filesystem work on large shares and searches
 
-**Status: search cancellation and pooled ZIP buffering implemented; share authorization refactor remains. Priority: medium; benchmark each optimization.**
+**Status: search cancellation, pooled ZIP buffering, and lock-light share authorization implemented; benchmark coverage remains. Priority: medium.**
 
-Path safety currently calls `EvalSymlinks` for ordinary entries repeatedly: listing resolves every entry, share authorization resolves both sides on each check, and ZIP walking can resolve and reauthorize the same descendant several times. `Use` performs filesystem authorization and a state-file rewrite while holding the global store mutex. Abandoned searches continue walking, and ZIP streaming uses the default 32 KiB copy buffer.
+Path safety still calls `EvalSymlinks` repeatedly for ordinary entries, and ZIP walking can resolve the same descendant several times. Share activity authorization and persistence now use a versioned lock-light update, searches stop on cancellation, and ZIP streaming uses a pooled copy buffer. Path-resolution caching and benchmark coverage remain.
 
 - Resolve the served root and selected share roots once. Use `Lstat`/`DirEntry.Type` to take the fast path for ordinary descendants, resolving actual symlinks before allowing them. Preserve the invariant that a symlink cannot escape the served root or its selected share root.
-- Remove filesystem calls and persistence I/O from the share-store critical section. Copy the immutable authorization data under lock, validate outside it, then reacquire and recheck revocation/expiry before recording activity.
+- Remove filesystem calls and persistence I/O from the share-store critical section. Copy the immutable authorization data under lock, validate outside it, then reacquire and recheck revocation/expiry before recording activity. **Implemented with versioned optimistic updates and serialized state writes.**
 - Check `r.Context()` during search walking and stop promptly when the client disconnects or starts a replacement search. **Implemented.**
 - Benchmark a reusable 256 KiB to 1 MiB ZIP copy buffer against the existing 32 KiB behavior for one large file and thousands of small files. Retain it only if throughput improves without material memory growth. **Implemented with a pooled 256 KiB buffer; benchmark coverage remains.**
 - Extend the performance probe to report path-resolution calls, concurrent share latency, cancellation delay, allocations, first-byte time, and throughput. Include a real two-device LAN run.
@@ -185,12 +185,12 @@ Process-wide roots, passwords, templates, and the share store make tests mutate 
 
 ## 15. Shut down gracefully without cutting off active downloads
 
-**Status: pending. Priority: high.**
+**Status: implemented. Priority: high.**
 
-The process currently relies on the operating system’s default SIGINT/SIGTERM behavior. Pressing Ctrl+C terminates it immediately, aborting in-progress file and ZIP transfers and providing no opportunity to flush coalesced share activity from task 9.
+ServeIt now handles SIGINT and SIGTERM explicitly. The first signal drains active requests and flushes share state; a second signal forces connections closed.
 
-- Use `signal.NotifyContext` or equivalent handling for SIGINT and SIGTERM. On the first signal, stop accepting new connections and begin `http.Server.Shutdown` while existing requests continue.
-- Allow active downloads to finish without an arbitrary short deadline. A second signal should call `Server.Close` and force an immediate exit so the operator can always stop a stuck transfer.
-- Flush pending share-store activity before the graceful exit completes. Report flush or shutdown errors through the common logger and return a nonzero exit status when appropriate.
-- Print one concise shutdown message stating that active transfers are draining and that a second Ctrl+C forces exit. Do not interleave routine request noise with the startup or shutdown panels.
+- Use `signal.NotifyContext` or equivalent handling for SIGINT and SIGTERM. On the first signal, stop accepting new connections and begin `http.Server.Shutdown` while existing requests continue. **Implemented.**
+- Allow active downloads to finish without an arbitrary short deadline. A second signal should call `Server.Close` and force an immediate exit so the operator can always stop a stuck transfer. **Implemented.**
+- Flush pending share-store activity before the graceful exit completes. Report flush or shutdown errors through the common logger and return a nonzero exit status when appropriate. **Implemented.**
+- Print one concise shutdown message stating that active transfers are draining and that a second Ctrl+C forces exit. Do not interleave routine request noise with the startup or shutdown panels. **Implemented.**
 - Add an integration test with a deliberately slow streaming response: confirm the first signal rejects new work but lets the active response finish, and confirm a second signal aborts it. Cover SIGTERM and persistence flushing without sending real signals to the main test process.

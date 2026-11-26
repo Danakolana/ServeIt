@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -103,6 +104,53 @@ func TestAdminViewsGenerateQROnlyOnDemand(t *testing.T) {
 	shareQRHandler(recorder, httptest.NewRequest(http.MethodGet, "/api/admin/shares/share-id/qr", nil))
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"QRDataURL":"data:image/png;base64,`) {
 		t.Fatalf("QR response = %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestShareStorePrunesRetainedHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shares.json")
+	now := time.Now()
+	old := now.Add(-shareRetentionPeriod - time.Hour)
+	payload, err := json.Marshal([]Share{
+		{ID: "old-expired", HardExpiresAt: old},
+		{ID: "old-revoked", Revoked: true, LastActivityAt: old},
+		{ID: "fresh", HardExpiresAt: now.Add(time.Hour)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := loadShareStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.shares) != 1 || store.shares[0].ID != "fresh" {
+		t.Fatalf("retained shares = %#v", store.shares)
+	}
+}
+
+func TestServeWithSignalChannelStopsCleanly(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}
+	signals := make(chan os.Signal, 1)
+	previousStore := shareStore
+	shareStore = nil
+	t.Cleanup(func() { shareStore = previousStore })
+	done := make(chan error, 1)
+	go func() { done <- serveWithSignalChannel(server, listener, signals) }()
+	signals <- os.Interrupt
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serveWithSignalChannel() = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("graceful shutdown did not finish")
 	}
 }
 

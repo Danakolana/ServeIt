@@ -123,6 +123,8 @@ ServeIt rejects unexpected Host headers to reduce DNS-rebinding exposure. If you
 
 Search walks are cancellable and limited to four concurrent filesystem walks, with results capped at 200 matches. ZIP downloads are capped at 100,000 entries or 10 GiB per request.
 
+Press Ctrl+C once to stop accepting new requests while active transfers drain. Press it a second time to force-close active connections. Share state is flushed during shutdown; revoked and long-expired records are retained for up to 30 days before pruning.
+
 ## Share only part of a folder
 
 1. Open `http://<lan-address>:<port>/admin` and sign in as `admin`.

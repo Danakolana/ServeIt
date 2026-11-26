@@ -210,6 +210,34 @@ func TestShareDoesNotFollowSymlinkOutsideSelection(t *testing.T) {
 	}
 }
 
+func TestSharedFileCountsOnlySuccessfulNonRangeGets(t *testing.T) {
+	dir := t.TempDir()
+	restoreRoot(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	previousStore := shareStore
+	shareStore = &ShareStore{path: filepath.Join(dir, "state.json"), shares: []*Share{{Token: "token", Items: []ShareItem{{Path: "file.txt"}}, IdleTimeoutMinutes: 10, ExpiresAt: time.Now().Add(time.Hour), HardExpiresAt: time.Now().Add(2 * time.Hour)}}}
+	t.Cleanup(func() { shareStore = previousStore })
+	get := httptest.NewRecorder()
+	shareHandler(get, httptest.NewRequest(http.MethodGet, "/s/token/?path=file.txt", nil))
+	if get.Code != http.StatusOK || shareStore.Snapshot()[0].Downloads != 1 {
+		t.Fatalf("GET status=%d downloads=%d", get.Code, shareStore.Snapshot()[0].Downloads)
+	}
+	head := httptest.NewRecorder()
+	shareHandler(head, httptest.NewRequest(http.MethodHead, "/s/token/?path=file.txt", nil))
+	if head.Code != http.StatusOK || shareStore.Snapshot()[0].Downloads != 1 {
+		t.Fatalf("HEAD status=%d downloads=%d", head.Code, shareStore.Snapshot()[0].Downloads)
+	}
+	rangeReq := httptest.NewRequest(http.MethodGet, "/s/token/?path=file.txt", nil)
+	rangeReq.Header.Set("Range", "bytes=0-1")
+	ranged := httptest.NewRecorder()
+	shareHandler(ranged, rangeReq)
+	if ranged.Code != http.StatusPartialContent || shareStore.Snapshot()[0].Downloads != 1 {
+		t.Fatalf("Range status=%d downloads=%d", ranged.Code, shareStore.Snapshot()[0].Downloads)
+	}
+}
+
 func TestShareStateSymlinkCannotBeDownloaded(t *testing.T) {
 	dir := t.TempDir()
 	restoreRoot(t, dir)

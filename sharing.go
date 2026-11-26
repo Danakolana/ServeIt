@@ -28,6 +28,7 @@ const (
 	legacyShareStateFilename = ".lanserve-shares.json"
 	maxShareItems            = 500
 	maxShareTimeoutMinutes   = 1440
+	shareRetentionPeriod     = 30 * 24 * time.Hour
 )
 
 var (
@@ -107,9 +108,11 @@ type ShareAdminView struct {
 }
 
 type ShareStore struct {
-	mu     sync.Mutex
-	path   string
-	shares []*Share
+	mu        sync.Mutex
+	persistMu sync.Mutex
+	version   uint64
+	path      string
+	shares    []*Share
 }
 
 var (
@@ -425,18 +428,20 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !info.IsDir() {
-			countDownload := r.Method == http.MethodGet && r.Header.Get("Range") == ""
-			if countDownload {
-				if _, err := shareStore.Use(token, rel, true); err != nil {
-					serveShareError(w, err)
-					return
-				}
-			} else if _, err := shareStore.Use(token, rel, false); err != nil {
-				serveShareError(w, err)
+			trackDownload := r.Method == http.MethodGet && r.Header.Get("Range") == ""
+			writer := w
+			statusWriter := &responseStatusWriter{ResponseWriter: w}
+			if trackDownload {
+				writer = statusWriter
+			}
+			if err := serveRootFile(writer, r, rel); err != nil {
+				http.NotFound(w, r)
 				return
 			}
-			if err := serveRootFile(w, r, rel); err != nil {
-				http.NotFound(w, r)
+			if trackDownload && statusWriter.status >= http.StatusOK && statusWriter.status < http.StatusMultipleChoices {
+				if _, err := shareStore.Use(token, rel, true); err != nil {
+					log.Printf("share download activity update failed: %v", err)
+				}
 			}
 			return
 		}
@@ -687,7 +692,30 @@ func loadShareStore(path string) (*ShareStore, error) {
 			return store, nil
 		}
 	}
+	if store.prune(time.Now()) {
+		if err := store.persistSnapshot(store.shares); err != nil {
+			log.Printf("warning: could not persist pruned share state: %v", err)
+		}
+	}
 	return store, nil
+}
+
+func (store *ShareStore) prune(now time.Time) bool {
+	kept := store.shares[:0]
+	changed := false
+	for _, share := range store.shares {
+		deadline := share.HardExpiresAt
+		if share.Revoked {
+			deadline = share.LastActivityAt
+		}
+		if !deadline.IsZero() && now.After(deadline.Add(shareRetentionPeriod)) {
+			changed = true
+			continue
+		}
+		kept = append(kept, share)
+	}
+	store.shares = kept
+	return changed
 }
 
 func (store *ShareStore) Create(items []ShareItem, idleMinutes, maxMinutes int) (Share, error) {
@@ -713,6 +741,7 @@ func (store *ShareStore) Create(items []ShareItem, idleMinutes, maxMinutes int) 
 		store.shares = store.shares[1:]
 		return Share{}, err
 	}
+	store.version++
 	return *created, nil
 }
 
@@ -746,39 +775,56 @@ func (store *ShareStore) GetActive(token string) (Share, error) {
 }
 
 func (store *ShareStore) Use(token, rel string, download bool) (Share, error) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	now := time.Now()
-	for _, item := range store.shares {
-		if item.Token != token {
-			continue
+	for attempt := 0; attempt < 3; attempt++ {
+		store.mu.Lock()
+		index := -1
+		var snapshot Share
+		version := store.version
+		for i, item := range store.shares {
+			if item.Token == token {
+				index = i
+				snapshot = cloneShare(*item)
+				break
+			}
 		}
-		if item.Revoked || !now.Before(item.ExpiresAt) || !now.Before(item.HardExpiresAt) {
+		all := cloneShares(store.shares)
+		store.mu.Unlock()
+		if index < 0 {
+			return Share{}, errShareNotFound
+		}
+		now := time.Now()
+		if snapshot.Revoked || !now.Before(snapshot.ExpiresAt) || !now.Before(snapshot.HardExpiresAt) {
 			return Share{}, errShareExpired
 		}
-		if rel != "" && !shareAllows(item, rel) {
+		if rel != "" && !shareAllows(&snapshot, rel) {
 			return Share{}, errShareDenied
 		}
-		before := *item
-		item.LastActivityAt = now
-		item.ExpiresAt = now.Add(time.Duration(item.IdleTimeoutMinutes) * time.Minute)
-		if item.ExpiresAt.After(item.HardExpiresAt) {
-			item.ExpiresAt = item.HardExpiresAt
+		snapshot.LastActivityAt = now
+		snapshot.ExpiresAt = now.Add(time.Duration(snapshot.IdleTimeoutMinutes) * time.Minute)
+		if snapshot.ExpiresAt.After(snapshot.HardExpiresAt) {
+			snapshot.ExpiresAt = snapshot.HardExpiresAt
 		}
 		if download {
-			item.Downloads++
+			snapshot.Downloads++
 		} else {
-			item.PageViews++
+			snapshot.PageViews++
 		}
-		if err := store.persistLocked(); err != nil {
-			*item = before
+		all[index] = &snapshot
+		if err := store.persistSnapshot(all); err != nil {
 			return Share{}, fmt.Errorf("%w: %v", errShareStorage, err)
 		}
-		copy := *item
-		copy.Items = append([]ShareItem(nil), item.Items...)
-		return copy, nil
+		store.mu.Lock()
+		if store.version != version {
+			store.mu.Unlock()
+			continue
+		}
+		store.shares[index] = &snapshot
+		store.version++
+		result := cloneShare(snapshot)
+		store.mu.Unlock()
+		return result, nil
 	}
-	return Share{}, errShareNotFound
+	return Share{}, fmt.Errorf("%w: share state changed during update", errShareStorage)
 }
 
 func (store *ShareStore) Revoke(id string) error {
@@ -792,6 +838,7 @@ func (store *ShareStore) Revoke(id string) error {
 				*item = before
 				return fmt.Errorf("%w: %v", errShareStorage, err)
 			}
+			store.version++
 			return nil
 		}
 	}
@@ -799,10 +846,16 @@ func (store *ShareStore) Revoke(id string) error {
 }
 
 func (store *ShareStore) persistLocked() error {
+	return store.persistSnapshot(store.shares)
+}
+
+func (store *ShareStore) persistSnapshot(shares []*Share) error {
+	store.persistMu.Lock()
+	defer store.persistMu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(store.shares, "", "  ")
+	data, err := json.MarshalIndent(shares, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -837,6 +890,27 @@ func (store *ShareStore) persistLocked() error {
 		_ = directory.Close()
 	}
 	return nil
+}
+
+func (store *ShareStore) Flush() error {
+	store.mu.Lock()
+	shares := cloneShares(store.shares)
+	store.mu.Unlock()
+	return store.persistSnapshot(shares)
+}
+
+func cloneShare(share Share) Share {
+	share.Items = append([]ShareItem(nil), share.Items...)
+	return share
+}
+
+func cloneShares(shares []*Share) []*Share {
+	result := make([]*Share, len(shares))
+	for i, share := range shares {
+		copy := cloneShare(*share)
+		result[i] = &copy
+	}
+	return result
 }
 
 func makeAdminView(r *http.Request, item Share) ShareAdminView {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -101,11 +102,11 @@ func shareDownloadHandler(w http.ResponseWriter, r *http.Request, token string) 
 		writeShareJSON(w, http.StatusOK, zipPlan(entries, total))
 		return
 	}
-	if _, err := shareStore.Use(token, "", true); err != nil {
-		serveShareError(w, err)
-		return
+	if writeZipDownload(w, entries) {
+		if _, err := shareStore.Use(token, "", true); err != nil {
+			log.Printf("share ZIP activity update failed: %v", err)
+		}
 	}
-	writeZipDownload(w, entries)
 }
 
 func downloadErrorStatus(err error) int {
@@ -171,14 +172,16 @@ func readDownloadPaths(r *http.Request) ([]string, error) {
 	return r.Form["path"], nil
 }
 
-func writeZipDownload(w http.ResponseWriter, entries []zipEntry) {
+func writeZipDownload(w http.ResponseWriter, entries []zipEntry) bool {
 	started, err := streamStoredZip(w, entries)
 	if err != nil && started {
 		panic(http.ErrAbortHandler)
 	}
 	if err != nil {
 		writeShareError(w, http.StatusConflict, "A selected file disappeared before it could be packed.")
+		return false
 	}
+	return started
 }
 
 func streamStoredZip(w http.ResponseWriter, entries []zipEntry) (bool, error) {
