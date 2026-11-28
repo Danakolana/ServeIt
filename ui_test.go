@@ -283,6 +283,22 @@ func TestAllUITemplateSetsParseAndRender(t *testing.T) {
 	}
 }
 
+func TestStartupAdminCredentialsCallout(t *testing.T) {
+	out := startupAdminCredentials("test-secret-42", true, 58)
+	if !strings.Contains(out, "test-secret-42") {
+		t.Fatal("callout missing admin password")
+	}
+	if !strings.Contains(out, "generated for this run only") {
+		t.Fatal("callout missing generated notice")
+	}
+	if !strings.Contains(out, "Password") || !strings.Contains(out, "User") {
+		t.Fatal("callout missing credential labels")
+	}
+	if !strings.Contains(out, strings.Repeat("=", 20)) {
+		t.Fatal("callout missing emphasis border")
+	}
+}
+
 func TestStartupQREmbedsCredentialsForProtectedDoors(t *testing.T) {
 	if got, want := authorizedURL("http://192.168.1.20:8080/", ""), "http://192.168.1.20:8080/"; got != want {
 		t.Fatalf("open browser URL = %q, want %q", got, want)

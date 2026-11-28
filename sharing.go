@@ -1222,18 +1222,12 @@ func renderStartup(port string, width int) string {
 	if password != "" {
 		browser = "password required, user admin"
 	}
-	secret := adminPassword
-	if adminPasswordGenerated {
-		secret += "  (generated for this run)"
-	}
 	facts := [][2]string{
 		{"Directory", root},
 		{"Listen", serverAddress},
 		{"Port", port},
 		{"File browser", browser},
 		{"Hidden files", map[bool]string{true: "included (--show-hidden)", false: "excluded by default"}[showHidden]},
-		{"Admin user", "admin"},
-		{"Admin password", secret},
 		{"Stop", "Ctrl+C"},
 	}
 	if password == "" {
@@ -1251,6 +1245,7 @@ func renderStartup(port string, width int) string {
 	out.WriteString("\n")
 	out.WriteString(startupBox("ServeIt", facts, width))
 	out.WriteString("\n")
+	out.WriteString(startupAdminCredentials(adminPassword, adminPasswordGenerated, width))
 	for _, base := range urls {
 		out.WriteString(renderAddressBlock(base, width))
 		out.WriteString("\n")
@@ -1291,6 +1286,64 @@ func startupBox(title string, rows [][2]string, width int) string {
 		out.WriteString("| " + padRight(line, inner) + " |\n")
 	}
 	out.WriteString(rule)
+	return out.String()
+}
+
+func startupAdminCredentials(secret string, generated bool, width int) string {
+	head := "🔐  Admin login — save this password"
+	if generated {
+		head = "🔐  Admin login — generated for this run only"
+	}
+	rows := [][2]string{
+		{"User", "admin"},
+		{"Password", secret},
+	}
+	return "\n" + startupHighlightBox(head, rows, width, 10) + "\n"
+}
+
+func startupHighlightBox(header string, rows [][2]string, width int, labelWidth int) string {
+	if width < 40 {
+		width = 40
+	}
+	inner := width - 4
+	if inner < 24 {
+		inner = 24
+	}
+	if labelWidth < 8 {
+		labelWidth = 8
+	}
+	var body []string
+	for i, line := range wrapText(header, inner) {
+		if i == 0 {
+			line = "!! " + line
+		}
+		body = append(body, padRight(line, inner))
+	}
+	body = append(body, strings.Repeat("=", inner))
+	for _, row := range rows {
+		valueWidth := inner - labelWidth - 1
+		if valueWidth < 8 {
+			valueWidth = 8
+		}
+		lines := wrapText(row[1], valueWidth)
+		if len(lines) == 0 {
+			lines = []string{""}
+		}
+		for i, line := range lines {
+			label := ""
+			if i == 0 {
+				label = row[0]
+			}
+			body = append(body, padRight(padRight(label, labelWidth)+" "+line, inner))
+		}
+	}
+	hRule := "+" + strings.Repeat("=", inner+2) + "+\n"
+	var out strings.Builder
+	out.WriteString(hRule)
+	for _, line := range body {
+		out.WriteString("| " + padRight(line, inner) + " |\n")
+	}
+	out.WriteString(hRule)
 	return out.String()
 }
 
