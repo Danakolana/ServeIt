@@ -39,6 +39,7 @@ type uiTemplateSet struct {
 	browse *template.Template
 	admin  *template.Template
 	share  *template.Template
+	gone   *template.Template
 }
 
 var uiTemplates map[string]uiTemplateSet
@@ -79,7 +80,11 @@ func initTemplates() error {
 		if err != nil {
 			return fmt.Errorf("parse %s share template: %w", theme, err)
 		}
-		uiTemplates[theme] = uiTemplateSet{browse: browse, admin: admin, share: share}
+		gone := share.Lookup("gone")
+		if gone == nil {
+			return fmt.Errorf("parse %s share template: missing gone template", theme)
+		}
+		uiTemplates[theme] = uiTemplateSet{browse: browse, admin: admin, share: share, gone: gone}
 	}
 	return nil
 }

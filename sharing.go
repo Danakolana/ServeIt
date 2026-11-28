@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -28,6 +29,12 @@ const (
 	legacyShareStateFilename = ".lanserve-shares.json"
 	maxShareItems            = 500
 	maxShareTimeoutMinutes   = 1440
+	maxShareTitleRunes       = 80
+	maxShareNoteRunes        = 240
+	shareExpiredHeading      = "This link has expired."
+	shareExpiredDetail       = "The time limit has ended. Ask for a new link if you still need these files."
+	shareRevokedHeading      = "This link was revoked."
+	shareRevokedDetail       = "The person who shared these files withdrew access."
 	shareRetentionPeriod     = 30 * 24 * time.Hour
 	activityCoalesceDelay    = 250 * time.Millisecond
 )
@@ -55,6 +62,12 @@ type AdminPageData struct {
 	CSPNonce       string
 }
 
+type ShareGoneData struct {
+	Heading  string
+	Detail   string
+	CSPNonce string
+}
+
 type SharedPageData struct {
 	Token                string
 	CurrentPath          string
@@ -65,6 +78,8 @@ type SharedPageData struct {
 	IdleTimeoutMinutes   int
 	RemainingSeconds     int64
 	HardRemainingSeconds int64
+	Title                string
+	Note                 string
 	ThemeSwitchURL       string
 	ThemeOptions         []ThemeOption
 	CSPNonce             string
@@ -86,6 +101,8 @@ type Share struct {
 	HardExpiresAt      time.Time
 	IdleTimeoutMinutes int
 	MaxLifetimeMinutes int
+	Title              string
+	Note               string
 	PageViews          int64
 	Downloads          int64
 	Revoked            bool
@@ -102,6 +119,8 @@ type ShareAdminView struct {
 	HardExpiresAt      time.Time
 	IdleTimeoutMinutes int
 	MaxLifetimeMinutes int
+	Title              string
+	Note               string
 	PageViews          int64
 	Downloads          int64
 	Status             string
@@ -121,6 +140,7 @@ type ShareStore struct {
 var (
 	errShareNotFound = errors.New("share not found")
 	errShareExpired  = errors.New("share expired")
+	errShareRevoked  = errors.New("share revoked")
 	errShareDenied   = errors.New("path is not included in this share")
 	errShareStorage  = errors.New("share storage unavailable")
 )
@@ -307,6 +327,8 @@ func sharesCollectionHandler(w http.ResponseWriter, r *http.Request) {
 			Items              []string
 			IdleTimeoutMinutes int
 			MaxLifetimeMinutes int
+			Title              string
+			Note               string
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		decoder := json.NewDecoder(r.Body)
@@ -328,7 +350,17 @@ func sharesCollectionHandler(w http.ResponseWriter, r *http.Request) {
 			writeShareError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		created, err := shareStore.Create(items, request.IdleTimeoutMinutes, request.MaxLifetimeMinutes)
+		title, err := normalizeShareLabel(request.Title, maxShareTitleRunes, "Title")
+		if err != nil {
+			writeShareError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		note, err := normalizeShareLabel(request.Note, maxShareNoteRunes, "Note")
+		if err != nil {
+			writeShareError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		created, err := shareStore.Create(items, request.IdleTimeoutMinutes, request.MaxLifetimeMinutes, title, note)
 		if err != nil {
 			writeShareError(w, http.StatusInternalServerError, "Could not create share")
 			return
@@ -414,6 +446,9 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	shared, err := shareStore.GetActive(token)
 	if err != nil {
+		if serveShareGonePage(w, r, err) {
+			return
+		}
 		serveShareError(w, err)
 		return
 	}
@@ -469,13 +504,16 @@ func shareHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	shared, err = shareStore.Touch(token, rel, false)
 	if err != nil {
+		if serveShareGonePage(w, r, err) {
+			return
+		}
 		serveShareError(w, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	remaining, hardRemaining := shareRemainingSeconds(shared, time.Now())
-	data := SharedPageData{Token: token, CurrentPath: sharedDisplayPath(rel), Entries: entries, Parents: sharedBreadcrumbs(&shared, rel), ExpiresAt: shared.ExpiresAt, HardExpiresAt: shared.HardExpiresAt, IdleTimeoutMinutes: shared.IdleTimeoutMinutes, RemainingSeconds: remaining, HardRemainingSeconds: hardRemaining, ThemeSwitchURL: themeSwitchURL(r), ThemeOptions: themeOptions(r), CSPNonce: requestCSPNonce(r)}
+	data := SharedPageData{Token: token, CurrentPath: sharedDisplayPath(rel), Entries: entries, Parents: sharedBreadcrumbs(&shared, rel), ExpiresAt: shared.ExpiresAt, HardExpiresAt: shared.HardExpiresAt, IdleTimeoutMinutes: shared.IdleTimeoutMinutes, RemainingSeconds: remaining, HardRemainingSeconds: hardRemaining, Title: shared.Title, Note: shared.Note, ThemeSwitchURL: themeSwitchURL(r), ThemeOptions: themeOptions(r), CSPNonce: requestCSPNonce(r)}
 	if err := templatesForRequest(r).share.Execute(w, data); err != nil {
 		log.Printf("share template error: %v", err)
 	}
@@ -730,7 +768,7 @@ func (store *ShareStore) prune(now time.Time) bool {
 	return changed
 }
 
-func (store *ShareStore) Create(items []ShareItem, idleMinutes, maxMinutes int) (Share, error) {
+func (store *ShareStore) Create(items []ShareItem, idleMinutes, maxMinutes int, title, note string) (Share, error) {
 	id, err := randomSecret(9)
 	if err != nil {
 		return Share{}, err
@@ -745,7 +783,7 @@ func (store *ShareStore) Create(items []ShareItem, idleMinutes, maxMinutes int) 
 	if expiry.After(hardExpiry) {
 		expiry = hardExpiry
 	}
-	created := &Share{ID: id, Token: token, Items: items, CreatedAt: now, LastActivityAt: now, ExpiresAt: expiry, HardExpiresAt: hardExpiry, IdleTimeoutMinutes: idleMinutes, MaxLifetimeMinutes: maxMinutes}
+	created := &Share{ID: id, Token: token, Items: items, CreatedAt: now, LastActivityAt: now, ExpiresAt: expiry, HardExpiresAt: hardExpiry, IdleTimeoutMinutes: idleMinutes, MaxLifetimeMinutes: maxMinutes, Title: title, Note: note}
 	store.persistMu.Lock()
 	defer store.persistMu.Unlock()
 	store.mu.Lock()
@@ -784,8 +822,8 @@ func (store *ShareStore) GetActive(token string) (Share, error) {
 		if item.Token != token {
 			continue
 		}
-		if item.Revoked || !now.Before(item.ExpiresAt) || !now.Before(item.HardExpiresAt) {
-			return Share{}, errShareExpired
+		if err := shareAccessError(item, now); err != nil {
+			return Share{}, err
 		}
 		copy := *item
 		copy.Items = append([]ShareItem(nil), item.Items...)
@@ -815,8 +853,8 @@ func (store *ShareStore) Use(token, rel string, download bool) (Share, error) {
 			return Share{}, errShareNotFound
 		}
 		now := time.Now()
-		if snapshot.Revoked || !now.Before(snapshot.ExpiresAt) || !now.Before(snapshot.HardExpiresAt) {
-			return Share{}, errShareExpired
+		if err := shareAccessError(&snapshot, now); err != nil {
+			return Share{}, err
 		}
 		if rel != "" && !shareAllows(&snapshot, rel) {
 			return Share{}, errShareDenied
@@ -866,8 +904,8 @@ func (store *ShareStore) Touch(token, rel string, download bool) (Share, error) 
 		if item.Token != token {
 			continue
 		}
-		if item.Revoked || !now.Before(item.ExpiresAt) || !now.Before(item.HardExpiresAt) {
-			return Share{}, errShareExpired
+		if err := shareAccessError(item, now); err != nil {
+			return Share{}, err
 		}
 		item.LastActivityAt = now
 		item.ExpiresAt = now.Add(time.Duration(item.IdleTimeoutMinutes) * time.Minute)
@@ -1050,7 +1088,7 @@ func makeAdminView(r *http.Request, item Share) ShareAdminView {
 		remaining = 0
 	}
 	shareURL := requestBaseURL(r) + "/s/" + item.Token + "/"
-	return ShareAdminView{ID: item.ID, URL: shareURL, Items: item.Items, CreatedAt: item.CreatedAt, LastActivityAt: item.LastActivityAt, ExpiresAt: item.ExpiresAt, HardExpiresAt: item.HardExpiresAt, IdleTimeoutMinutes: item.IdleTimeoutMinutes, MaxLifetimeMinutes: item.MaxLifetimeMinutes, PageViews: item.PageViews, Downloads: item.Downloads, Status: status, RemainingSeconds: int64(remaining.Seconds())}
+	return ShareAdminView{ID: item.ID, URL: shareURL, Items: item.Items, CreatedAt: item.CreatedAt, LastActivityAt: item.LastActivityAt, ExpiresAt: item.ExpiresAt, HardExpiresAt: item.HardExpiresAt, IdleTimeoutMinutes: item.IdleTimeoutMinutes, MaxLifetimeMinutes: item.MaxLifetimeMinutes, Title: item.Title, Note: item.Note, PageViews: item.PageViews, Downloads: item.Downloads, Status: status, RemainingSeconds: int64(remaining.Seconds())}
 }
 
 func requestBaseURL(r *http.Request) string {
@@ -1095,13 +1133,62 @@ func writeShareError(w http.ResponseWriter, status int, message string) {
 	writeShareJSON(w, status, map[string]string{"error": message})
 }
 
+func shareAccessError(item *Share, now time.Time) error {
+	if item.Revoked {
+		return errShareRevoked
+	}
+	if !now.Before(item.ExpiresAt) || !now.Before(item.HardExpiresAt) {
+		return errShareExpired
+	}
+	return nil
+}
+
+func normalizeShareLabel(value string, limit int, name string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if strings.ContainsAny(value, "\r\n") {
+		return "", fmt.Errorf("%s must be a single line", name)
+	}
+	if utf8.RuneCountInString(value) > limit {
+		return "", fmt.Errorf("%s must be at most %d characters", name, limit)
+	}
+	return value, nil
+}
+
+func shareGoneCopy(err error) (string, string, bool) {
+	if errors.Is(err, errShareExpired) {
+		return shareExpiredHeading, shareExpiredDetail, true
+	}
+	if errors.Is(err, errShareRevoked) {
+		return shareRevokedHeading, shareRevokedDetail, true
+	}
+	return "", "", false
+}
+
+func serveShareGonePage(w http.ResponseWriter, r *http.Request, err error) bool {
+	heading, detail, ok := shareGoneCopy(err)
+	if !ok {
+		return false
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusGone)
+	data := ShareGoneData{Heading: heading, Detail: detail, CSPNonce: requestCSPNonce(r)}
+	if execErr := templatesForRequest(r).gone.Execute(w, data); execErr != nil {
+		log.Printf("share gone template error: %v", execErr)
+	}
+	return true
+}
+
 func serveShareError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errShareStorage) {
 		http.Error(w, "The share state could not be saved. Try again.", http.StatusServiceUnavailable)
 		return
 	}
-	if errors.Is(err, errShareExpired) {
-		http.Error(w, "This share link has expired or was revoked.", http.StatusGone)
+	if heading, _, ok := shareGoneCopy(err); ok {
+		writeShareError(w, http.StatusGone, heading)
 		return
 	}
 	if errors.Is(err, errShareDenied) {

@@ -32,6 +32,10 @@
         without activity, and no later than
         <select id="max" aria-label="Maximum lifetime"><option value="30">30 minutes</option><option value="60" selected>1 hour</option><option value="240">4 hours</option><option value="720">12 hours</option><option value="1440">24 hours</option></select>
         from now.</p>
+      <div class="labels">
+        <label>Title <input id="title" maxlength="80" placeholder="Optional"></label>
+        <label>Note <input id="note" maxlength="240" placeholder="Optional, one sentence"></label>
+      </div>
 
   <main class="admin-file-list">
   {{if .Entries}}
@@ -76,7 +80,7 @@
 </dialog>
 
 <div class="dock" id="dock"><span id="sum"></span><button type="button" class="btn ghost" id="clr">Clear</button><button type="button" class="btn" id="go">Create link</button></div>
-<script src="/static/app.js?v=2"></script>
-<script src="/static/admin.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
+<script src="/static/admin.js?v=3"></script>
 </body>
 </html>

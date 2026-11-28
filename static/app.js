@@ -63,6 +63,38 @@ function pick(t,o){
   else if(c.classList.contains('pick'))c.checked?sel.add(c.value):sel.delete(c.value);else return;upd()});
  $('#clr').onclick=()=>{sel.clear();upd()};
  go.onclick=async()=>{go.disabled=true;await o.go([...sel],toast,()=>{sel.clear();upd()});go.disabled=false};
+ let cursor=null;
+ const rows=()=>[...body.rows];
+ function move(step){
+  const list=rows();
+  if(!list.length)return;
+  let index=list.indexOf(cursor);
+  index=index<0?(step>0?0:list.length-1):Math.max(0,Math.min(list.length-1,index+step));
+  if(cursor)cursor.classList.remove('kbd');
+  cursor=list[index];
+  cursor.classList.add('kbd');
+  cursor.scrollIntoView({block:'nearest'});
+ }
+ document.addEventListener('keydown',e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  if(e.key!=='j'&&e.key!=='k'&&e.key!==' '&&e.key!=='Enter')return;
+  const active=document.activeElement,tag=active&&active.tagName?active.tagName.toLowerCase():'';
+  if(tag==='input'||tag==='textarea'||tag==='select'||tag==='button'||(active&&active.isContentEditable))return;
+  if(e.key==='j'||e.key==='k'){e.preventDefault();move(e.key==='j'?1:-1);return}
+  if(!cursor)return;
+  if(e.key===' '){
+   const box=cursor.querySelector('.pick');
+   if(!box)return;
+   e.preventDefault();
+   box.checked=!box.checked;
+   box.dispatchEvent(new Event('change',{bubbles:true}));
+   return;
+  }
+  const link=cursor.querySelector('a');
+  if(!link)return;
+  e.preventDefault();
+  link.click();
+ });
  sort();upd();
 }
 window.ServeIt={$,$$,esc,size,dur,rel,ic,J,toast,copy,zip,pick};

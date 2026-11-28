@@ -197,7 +197,7 @@ ServeIt now handles SIGINT and SIGTERM explicitly. The first signal drains activ
 
 ## 16. Optional label on a guest link
 
-**Status: not started.**
+**Status: implemented.**
 
 A guest page currently introduces itself with one fixed notice. The person who created the link should be able to say what the selection is, in the same short voice as the rest of the UI.
 
@@ -209,7 +209,7 @@ A guest page currently introduces itself with one fixed notice. The person who c
 
 ## 17. Copy a guest link as Markdown
 
-**Status: not started.**
+**Status: implemented.**
 
 The admin share card already copies the raw URL. The same card should also copy one Markdown link, for pasting into a chat or note.
 
@@ -219,7 +219,7 @@ The admin share card already copies the raw URL. The same card should also copy 
 
 ## 18. Say why a guest link is gone
 
-**Status: not started.**
+**Status: implemented.**
 
 An expired link and a revoked link currently return the same plain-text error: “This share link has expired or was revoked.” A guest should see which of those two happened, on a page that belongs to the product.
 
@@ -230,7 +230,7 @@ An expired link and a revoked link currently return the same plain-text error: �
 
 ## 19. Keyboard selection in the file list
 
-**Status: not started.**
+**Status: implemented.**
 
 The file tables already sort and already support multi-select with the pointer. The same list should be usable from the keyboard, without a new command system.
 
@@ -241,7 +241,7 @@ The file tables already sort and already support multi-select with the pointer. 
 
 ## 20. Keep multi-select reachable on a phone
 
-**Status: not started.**
+**Status: implemented.**
 
 Guest links are opened from a QR code, usually on a phone. Classic, the default theme, puts the selection bar at the top of the table, so it scrolls away. Modern and Harbor already pin a dock; this item brings the default theme up to that job and makes the controls easier to hit.
 

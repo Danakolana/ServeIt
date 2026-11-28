@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"html/template"
@@ -279,6 +280,74 @@ func TestAllUITemplateSetsParseAndRender(t *testing.T) {
 				t.Fatalf("rendered %s %s UI does not expose a collapsed picker with two alternate themes", theme, name)
 			}
 		}
+	}
+}
+
+func TestShareLabelLimitsAndGonePages(t *testing.T) {
+	title, err := normalizeShareLabel("  Photos  ", maxShareTitleRunes, "Title")
+	if err != nil || title != "Photos" {
+		t.Fatalf("normalize title = %q, %v", title, err)
+	}
+	if _, err := normalizeShareLabel(strings.Repeat("a", maxShareTitleRunes+1), maxShareTitleRunes, "Title"); err == nil {
+		t.Fatal("overlong title was accepted")
+	}
+	if _, err := normalizeShareLabel("line\nbreak", maxShareNoteRunes, "Note"); err == nil {
+		t.Fatal("multiline note was accepted")
+	}
+
+	if err := initTemplates(); err != nil {
+		t.Fatal(err)
+	}
+	previous := shareStore
+	t.Cleanup(func() { shareStore = previous })
+	now := time.Now()
+	shareStore = &ShareStore{shares: []*Share{
+		{Token: "expired", ExpiresAt: now.Add(-time.Minute), HardExpiresAt: now.Add(time.Hour)},
+		{Token: "revoked", Revoked: true, ExpiresAt: now.Add(time.Hour), HardExpiresAt: now.Add(2 * time.Hour)},
+		{Token: "labeled", Title: "Workshop files", Note: "Take the notes home.", Items: []ShareItem{{Path: "notes.txt", Name: "notes.txt"}}, ExpiresAt: now.Add(time.Hour), HardExpiresAt: now.Add(2 * time.Hour), IdleTimeoutMinutes: 15},
+	}}
+
+	expired := httptest.NewRecorder()
+	shareHandler(expired, httptest.NewRequest(http.MethodGet, "/s/expired/", nil))
+	if expired.Code != http.StatusGone || !strings.Contains(expired.Body.String(), shareExpiredHeading) || strings.Contains(expired.Body.String(), shareRevokedHeading) {
+		t.Fatalf("expired page = %d %s", expired.Code, expired.Body.String())
+	}
+	revoked := httptest.NewRequest(http.MethodGet, "/s/revoked/", nil)
+	revoked.AddCookie(&http.Cookie{Name: themeCookieName, Value: themeModern})
+	revokedPage := httptest.NewRecorder()
+	shareHandler(revokedPage, revoked)
+	if revokedPage.Code != http.StatusGone || !strings.Contains(revokedPage.Body.String(), shareRevokedHeading) || !strings.Contains(revokedPage.Body.String(), "/static/app.css") || strings.Contains(revokedPage.Body.String(), shareExpiredHeading) {
+		t.Fatalf("revoked page = %d %s", revokedPage.Code, revokedPage.Body.String())
+	}
+	missing := httptest.NewRecorder()
+	shareHandler(missing, httptest.NewRequest(http.MethodGet, "/s/missing/", nil))
+	if missing.Code != http.StatusNotFound || strings.Contains(missing.Body.String(), shareExpiredHeading) {
+		t.Fatalf("missing token = %d %s", missing.Code, missing.Body.String())
+	}
+	download := httptest.NewRecorder()
+	shareHandler(download, httptest.NewRequest(http.MethodPost, "/s/expired/download", strings.NewReader(`{"paths":["a"]}`)))
+	if download.Code != http.StatusGone || !strings.Contains(download.Body.String(), shareExpiredHeading) || strings.Contains(download.Body.String(), "<html") {
+		t.Fatalf("expired download = %d %s", download.Code, download.Body.String())
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/s/labeled/", nil)
+	request = request.WithContext(context.WithValue(request.Context(), cspNonceKey{}, "test-nonce"))
+	rootDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(rootDir, "notes.txt"), []byte("notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resolvedDir, err := filepath.EvalSymlinks(rootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousRoot, previousResolved := root, resolvedRoot
+	root, resolvedRoot = rootDir, resolvedDir
+	t.Cleanup(func() { root, resolvedRoot = previousRoot, previousResolved })
+	labeled := httptest.NewRecorder()
+	shareHandler(labeled, request)
+	body := labeled.Body.String()
+	if labeled.Code != http.StatusOK || !strings.Contains(body, "Workshop files") || !strings.Contains(body, "Take the notes home.") || strings.Contains(body, "This temporary link only provides access") {
+		t.Fatalf("labeled guest page = %d %s", labeled.Code, body)
 	}
 }
 

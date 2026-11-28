@@ -31,6 +31,10 @@ button{cursor:pointer}
 .hint,.opts{color:var(--mut);margin-bottom:12px}
 .opts{line-height:2.2}
 .opts select{padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.labels{display:grid;gap:8px;margin:0 0 16px}.labels label{display:grid;gap:4px;font-size:12px;font-weight:650;color:var(--mut)}.labels input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
+.list tbody tr.kbd{outline:2px solid var(--acc);outline-offset:-2px}
+.guest-label{margin-bottom:16px}.guest-label h2{margin:0 0 6px}.guest-label p{margin:0;color:var(--mut)}
+.share-name{margin:0;font-weight:700}
 .list{width:100%;border-collapse:collapse}
 .list th{padding:8px 10px;text-align:start;font-weight:500;font-size:13px;color:var(--mut)}
 .sort{background:none;border:0;padding:0;color:inherit}
@@ -72,7 +76,7 @@ dialog p{margin:12px 0 16px;color:var(--mut);font-size:13px;word-break:break-all
 dialog .acts{justify-content:center;margin:0}
 .foot{margin-top:40px;font-size:13px;color:var(--mut)}
 .foot a:hover{color:var(--acc)}
-@media(max-width:640px){.when{display:none}.wrap{padding-inline:14px}.top{flex-wrap:wrap}.search{order:3;flex-basis:100%;max-width:none;margin:0}.panel-head{padding:15px 16px}.panel-note{display:none}.panel-body{padding:15px 16px}.admin-file-list{margin:0 -16px -15px}.admin-file-list .list th,.admin-file-list .list td{padding-inline:14px}.shares-panel .panel-body{padding:10px}.share-top{align-items:flex-start;flex-direction:column}.share .acts{margin-inline-start:0;flex-wrap:wrap}}
+@media(max-width:640px){.when{display:none}.wrap{padding-inline:14px}.top{flex-wrap:wrap}.search{order:3;flex-basis:100%;max-width:none;margin:0}.panel-head{padding:15px 16px}.panel-note{display:none}.panel-body{padding:15px 16px}.admin-file-list{margin:0 -16px -15px}.admin-file-list .list th,.admin-file-list .list td{padding-inline:14px}.shares-panel .panel-body{padding:10px}.share-top{align-items:flex-start;flex-direction:column}.share .acts{margin-inline-start:0;flex-wrap:wrap}.pk{width:44px}.pk input{width:44px;height:44px}.dock .btn{min-height:44px;min-width:44px}}
 @media(prefers-reduced-motion:reduce){.dock,#toast{transition:none}}
 
 /* Share cards use a distinct visual state so access is readable at a glance. */

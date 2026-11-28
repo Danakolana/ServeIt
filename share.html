@@ -9,7 +9,8 @@
 header{background:#fff;border-bottom:1px solid #e2e8f0;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
 h1{font-size:1.05rem;margin:0;color:#4f46e5;font-weight:700}.header-actions{display:flex;align-items:center;gap:8px}.theme-link{font-size:.8rem;color:#4338ca;text-decoration:none;background:#eef2ff;padding:7px 10px;border-radius:8px;font-weight:600}.timer{font-size:.8rem;color:#64748b;background:#f1f5f9;padding:7px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
 nav{padding:10px 20px;font-size:.82rem;background:#fff;border-bottom:1px solid #e2e8f0}nav a{color:#4f46e5;text-decoration:none}nav span{margin:0 5px;color:#cbd5e1}
-.wrap{padding:20px 20px 60px;max-width:1100px;margin:auto}.notice{font-size:.83rem;color:#64748b;margin-bottom:12px}
+.wrap{padding:20px 20px 60px;max-width:1100px;margin:auto}.notice{font-size:.83rem;color:#64748b;margin-bottom:12px}.guest-title{font-size:1.05rem;margin:0 0 8px}
+tbody tr.kbd{outline:2px solid #4f46e5;outline-offset:-2px}
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.04)}
 .bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #e2e8f0}
 .bar .hint,.status{font-size:.78rem;color:#64748b}.status.error{color:#b91c1c}
@@ -28,7 +29,7 @@ tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color
 .credit a{color:#64748b;text-decoration:none;border-bottom:1px solid #e2e8f0}
 .credit a:hover{color:#4f46e5;border-bottom-color:#c7d2fe}
 .theme-picker{position:relative;display:block}.theme-current{list-style:none;cursor:pointer;font-size:.78rem;color:#312e81;padding:6px 8px;border-radius:7px;font-weight:650}.theme-current::-webkit-details-marker{display:none}.theme-current::after{content:"⌄";margin-inline-start:5px;font-size:.72rem}.theme-picker:hover .theme-current,.theme-picker[open] .theme-current,.theme-picker:focus-within .theme-current{background:#eef2ff}.theme-menu{position:absolute;top:calc(100% + 5px);inset-inline-end:0;z-index:10;display:none;min-width:112px;padding:5px;border:1px solid #e4e7f0;border-radius:9px;background:#fff;box-shadow:0 10px 24px rgba(31,35,55,.14)}.theme-picker:hover .theme-menu,.theme-picker[open] .theme-menu,.theme-picker:focus-within .theme-menu{display:grid;gap:2px}.theme-choice{display:block;font-size:.78rem;color:#4338ca;text-decoration:none;padding:6px 8px;border-radius:7px;font-weight:600}.theme-choice:hover{background:#eef2ff}
-@media(max-width:640px){header,.wrap,nav{padding-left:14px;padding-right:14px}.date{display:none}th,td{padding:10px 8px}}
+@media(max-width:640px){header,.wrap,nav{padding-left:14px;padding-right:14px}.date{display:none}th,td{padding:10px 8px}body{padding-bottom:92px}.bar{position:fixed;z-index:40;left:12px;right:12px;bottom:12px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.16)}.pick-col{width:44px}.pick-col input,#select-all{width:44px;height:44px}.bar button{min-height:44px}}
 </style>
 </head>
 <body>
@@ -43,7 +44,12 @@ tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color
   {{end}}
 </nav>
 <main class="wrap">
+  {{if or .Title .Note}}
+    {{if .Title}}<h2 class="guest-title">{{.Title}}</h2>{{end}}
+    {{if .Note}}<p class="notice">{{.Note}}</p>{{end}}
+  {{else}}
   <p class="notice">This temporary link only provides access to the files and folders selected by the administrator. Activity extends its idle timer within the maximum lifetime.</p>
+  {{end}}
   <div class="card">
     {{if .Entries}}
     <div class="bar" data-url="/s/{{.Token}}/download">
@@ -73,6 +79,7 @@ tr:last-child td{border-bottom:0}tbody tr:hover{background:#f8f7ff}.name a{color
     <p>Made by <a href="https://github.com/Danakolana" target="_blank" rel="noreferrer">danakolana</a> · <a href="https://github.com/Danakolana/ServeIt" target="_blank" rel="noreferrer">GitHub</a></p>
   </footer>
 </main>
+<script src="/static/keys.js"></script>
 <script nonce="{{.CSPNonce}}">
 var timer = document.getElementById('timer');
 var seconds = Number(timer.dataset.left);
@@ -178,6 +185,7 @@ function bindListing(table){
     picks.forEach(function(item){ item.checked = selectAll.checked; });
     updatePick();
   });
+  bindRowKeys(table);
   button.addEventListener('click', function(){
     seconds = Math.min(idleMinutes * 60, hardSeconds);
     updateTimer();
@@ -233,3 +241,25 @@ function startZipDownload(button, status, url, paths, done, planReady){
 </script>
 </body>
 </html>
+{{define "gone"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{.Heading}} · ServeIt</title>
+<style nonce="{{.CSPNonce}}">
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#f5f7fa;color:#1e293b;font-family:system-ui,-apple-system,sans-serif}
+main{width:min(440px,100%);background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:28px;box-shadow:0 1px 3px rgba(15,23,42,.04)}
+h1{font-size:1.15rem;margin:0 0 8px;color:#4f46e5}p{margin:0;color:#64748b;line-height:1.5}
+</style>
+</head>
+<body>
+<main>
+  <h1>{{.Heading}}</h1>
+  <p>{{.Detail}}</p>
+</main>
+</body>
+</html>
+{{end}}

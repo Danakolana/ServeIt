@@ -19,6 +19,7 @@ th[aria-sort="ascending"] .sort::after{content:" \2191";color:#4f46e5}
 th[aria-sort="descending"] .sort::after{content:" \2193";color:#4f46e5}
 th.num .sort{display:block;width:100%;text-align:right}
 td.num{text-align:right;color:#64748b;font-variant-numeric:tabular-nums}.select-col{width:38px;text-align:center}.file-link{color:#172033;text-decoration:none}.file-link:hover{color:#4f46e5}.empty{padding:42px;text-align:center;color:#94a3b8}
+.share-title{font-weight:700;margin-top:6px}tbody tr.kbd{outline:2px solid #4f46e5;outline-offset:-2px}
 .settings{padding:16px;display:grid;gap:13px}.field label{display:block;font-size:.78rem;color:#64748b;margin-bottom:5px}.field input{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:9px 10px}
 .hint{font-size:.78rem;color:#64748b;line-height:1.5}.primary,.secondary,.danger{border:0;border-radius:8px;padding:9px 13px;cursor:pointer;font-weight:600}.primary{background:#4f46e5;color:#fff}.primary:disabled{opacity:.45;cursor:not-allowed}.secondary{background:#eef2ff;color:#4338ca}.danger{background:#fee2e2;color:#b91c1c}
 #message{font-size:.83rem;min-height:1.2em}.error{color:#b91c1c}.success{color:#047857}.shares{margin-top:18px}.share-list{display:grid;gap:12px;padding:14px}
@@ -32,7 +33,7 @@ td.num{text-align:right;color:#64748b;font-variant-numeric:tabular-nums}.select-
 .credit a{color:#64748b;text-decoration:none;border-bottom:1px solid #e2e8f0}
 .credit a:hover{color:#4f46e5;border-bottom-color:#c7d2fe}
 .theme-picker{position:relative;display:block}.theme-current{list-style:none;cursor:pointer;font-size:.78rem;color:#312e81;padding:6px 8px;border-radius:7px;font-weight:650}.theme-current::-webkit-details-marker{display:none}.theme-current::after{content:"⌄";margin-inline-start:5px;font-size:.72rem}.theme-picker:hover .theme-current,.theme-picker[open] .theme-current,.theme-picker:focus-within .theme-current{background:#eef2ff}.theme-menu{position:absolute;top:calc(100% + 5px);inset-inline-end:0;z-index:10;display:none;min-width:112px;padding:5px;border:1px solid #e4e7f0;border-radius:9px;background:#fff;box-shadow:0 10px 24px rgba(31,35,55,.14)}.theme-picker:hover .theme-menu,.theme-picker[open] .theme-menu,.theme-picker:focus-within .theme-menu{display:grid;gap:2px}.theme-choice{display:block;font-size:.78rem;color:#4338ca;text-decoration:none;padding:6px 8px;border-radius:7px;font-weight:600}.theme-choice:hover{background:#eef2ff}
-@media(max-width:850px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.wrap{padding:14px}.share{grid-template-columns:1fr}.date-col{display:none}.modal-actions button{width:100%}}
+@media(max-width:850px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.wrap{padding:14px}.share{grid-template-columns:1fr}.date-col{display:none}.modal-actions button{width:100%;min-height:44px}.grid>.card{overflow:visible}.card-head{position:sticky;top:0;z-index:5;background:#fff}body{padding-bottom:84px}#create-share{position:fixed;z-index:40;left:12px;right:12px;bottom:12px;min-height:44px}.select-col{width:44px}.select-col input{width:44px;height:44px}}
 </style>
 </head>
 <body>
@@ -72,6 +73,8 @@ td.num{text-align:right;color:#64748b;font-variant-numeric:tabular-nums}.select-
     <aside class="card">
       <div class="card-head"><h2>Create temporary link</h2></div>
       <div class="settings">
+        <div class="field"><label for="share-title">Title</label><input id="share-title" maxlength="80" placeholder="Optional"></div>
+        <div class="field"><label for="share-note">Note</label><input id="share-note" maxlength="240" placeholder="Optional, one sentence"></div>
         <div class="field"><label for="idle">Idle timeout (minutes)</label><input id="idle" type="number" min="1" max="1440" value="15"></div>
         <div class="field"><label for="maximum">Maximum lifetime (minutes)</label><input id="maximum" type="number" min="1" max="1440" value="1440"></div>
         <p class="hint">Each guest page view or download restarts the idle timer. The link still expires at the maximum lifetime, which cannot exceed 24 hours.</p>
@@ -100,6 +103,7 @@ td.num{text-align:right;color:#64748b;font-variant-numeric:tabular-nums}.select-
     </div>
   </div>
 </div>
+<script src="/static/keys.js"></script>
 <script nonce="{{.CSPNonce}}">
 var apiBase = window.location.protocol + '//' + window.location.host;
 var shares = [];
@@ -142,7 +146,7 @@ createButton.addEventListener('click', async function(){
     var response = await fetch(apiBase + '/api/admin/shares', {
       method:'POST',
       headers:{'Content-Type':'application/json','X-ServeIt-Request':'admin'},
-      body:JSON.stringify({items:items,idleTimeoutMinutes:idle,maxLifetimeMinutes:maximum})
+      body:JSON.stringify({items:items,idleTimeoutMinutes:idle,maxLifetimeMinutes:maximum,title:document.getElementById('share-title').value,note:document.getElementById('share-note').value})
     });
     var result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not create link');
@@ -179,12 +183,14 @@ function renderShares() {
   list.innerHTML = shares.map(function(item){
     var names = item.Items.map(function(file){ return escapeHTML(file.Path); }).join(', ');
     var revoke = item.Status === 'active' ? '<button class="danger revoke" data-id="' + escapeHTML(item.ID) + '">Revoke</button>' : '';
+    var title = item.Title ? '<div class="share-title">' + escapeHTML(item.Title) + '</div>' : '';
     return '<article class="share">' +
       '<div><span class="badge ' + escapeHTML(item.Status) + '">' + escapeHTML(item.Status) + '</span>' +
+      title +
       '<div class="share-url">' + escapeHTML(item.URL) + '</div>' +
       '<div class="share-items">' + names + '</div>' +
       '<div class="share-meta"><span>Remaining: <b class="remaining">' + escapeHTML(remaining(item)) + '</b></span><span>Views: ' + item.PageViews + '</span><span>Downloads: ' + item.Downloads + '</span><span>Idle: ' + item.IdleTimeoutMinutes + 'm</span><span>Max: ' + item.MaxLifetimeMinutes + 'm</span></div></div>' +
-      '<div class="actions"><button class="secondary copy" data-url="' + escapeHTML(item.URL) + '">Copy</button><button class="secondary qr" data-id="' + escapeHTML(item.ID) + '">QR</button>' + revoke + '</div>' +
+      '<div class="actions"><button class="secondary copy" data-url="' + escapeHTML(item.URL) + '">Copy</button><button class="secondary copy-md" data-id="' + escapeHTML(item.ID) + '">Copy as Markdown</button><button class="secondary qr" data-id="' + escapeHTML(item.ID) + '">QR</button>' + revoke + '</div>' +
       '</article>';
   }).join('');
 }
@@ -214,6 +220,18 @@ document.getElementById('share-list').addEventListener('click', async function(e
       setTimeout(function(){ if (button.isConnected) button.textContent = label; }, 1400);
     }
   }
+  if (button.classList.contains('copy-md')) {
+    var shared = shares.find(function(value){ return value.ID === button.dataset.id; });
+    var label = button.textContent;
+    try {
+      await copyText(markdownShare(shared || {}));
+      button.textContent = 'Copied';
+      setTimeout(function(){ if (button.isConnected) button.textContent = 'Copy as Markdown'; }, 1200);
+    } catch (error) {
+      button.textContent = 'Copy failed';
+      setTimeout(function(){ if (button.isConnected) button.textContent = label; }, 1400);
+    }
+  }
   if (button.classList.contains('qr')) {
     var item = shares.find(function(value){ return value.ID === button.dataset.id; });
     if (item) openQR(item);
@@ -224,6 +242,10 @@ document.getElementById('share-list').addEventListener('click', async function(e
     if (response.ok) await loadShares();
   }
 });
+function markdownShare(item) {
+  var label = String(item.Title || 'Shared files').replace(/[\[\]]/g, '');
+  return '[' + label + '](' + item.URL + ')';
+}
 function copyText(text) {
   if (navigator.clipboard && window.isSecureContext) {
     return navigator.clipboard.writeText(text).catch(function(){ return fallbackCopy(text); });
@@ -293,6 +315,7 @@ setInterval(loadShares,15000);
 loadShares();
 updateSelection();
 bindAdminSort(document.querySelector('table'));
+bindRowKeys(document.querySelector('table'));
 function bindAdminSort(table){
   if(!table) return;
   var headers = Array.from(table.querySelectorAll('th[data-key]'));

@@ -22,6 +22,7 @@
   <nav class="path" aria-label="Current folder">{{range $i,$c := .Parents}}{{if $i}}<i>/</i>{{end}}<a dir="auto" href="/s/{{$.Token}}/?path={{$c.Path | urlquery}}">{{if $i}}{{$c.Name}}{{else}}Shared with you{{end}}</a>{{end}}</nav>
 
   <main>
+  {{if or .Title .Note}}<div class="guest-label">{{if .Title}}<h2>{{.Title}}</h2>{{end}}{{if .Note}}<p>{{.Note}}</p>{{end}}</div>{{end}}
   {{if .Entries}}
     <table class="list" id="t" data-dl="/s/{{.Token}}/download">
       <thead><tr>
@@ -50,7 +51,29 @@
 </div>
 
 <div class="dock" id="dock"><span id="sum"></span><button type="button" class="btn ghost" id="clr">Clear</button><button type="button" class="btn" id="go">Download</button></div>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=3"></script>
 <script src="/static/share.js"></script>
 </body>
 </html>
+{{define "gone"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{.Heading}} · ServeIt</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><span class="brand">ServeIt</span></header>
+  <main class="guest-label">
+    <h2>{{.Heading}}</h2>
+    <p>{{.Detail}}</p>
+  </main>
+</div>
+</body>
+</html>
+{{end}}
