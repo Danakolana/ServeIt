@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="/static/harbor.css">
 </head>
 <body>
-<div class="wrap">
+<div class="wrap admin-wrap">
   <header class="top">
     <a class="brand" href="/admin"><span class="mark"><svg class="ic"><use href="#i-mark"/></svg></span>ServeIt</a>
     <div class="top-actions"><details class="theme-picker"><summary class="theme-current">{{range .ThemeOptions}}{{if .Active}}{{.Label}}{{end}}{{end}}</summary><div class="theme-menu" role="group" aria-label="Theme">{{range .ThemeOptions}}{{if not .Active}}<a class="theme-choice" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}</div></details><a class="link" href="/">Browse files</a></div>
@@ -26,18 +26,10 @@
       <span class="panel-note">Folders include all contents</span>
     </div>
     <div class="panel-body">
-      <p class="hint">Pick the files and folders to hand out. The share link grants access only to these selections.</p>
-      <p class="opts">The link closes after
-        <select id="idle" aria-label="Idle timeout"><option value="5">5 minutes</option><option value="15" selected>15 minutes</option><option value="30">30 minutes</option><option value="60">1 hour</option><option value="240">4 hours</option></select>
-        without activity, and no later than
-        <select id="max" aria-label="Maximum lifetime"><option value="30">30 minutes</option><option value="60" selected>1 hour</option><option value="240">4 hours</option><option value="720">12 hours</option><option value="1440">24 hours</option></select>
-        from now.</p>
-      <div class="labels">
-        <label>Title <input id="title" maxlength="80" placeholder="Optional"></label>
-        <label>Note <input id="note" maxlength="240" placeholder="Optional, one sentence"></label>
-      </div>
-
-  <main class="admin-file-list">
+      <div class="picker-layout">
+        <div class="picker-main">
+          <p class="hint">Pick the files and folders to hand out. The share link grants access only to these selections.</p>
+          <main class="admin-file-list">
   {{if .Entries}}
     <table class="list" id="t">
       <thead><tr>
@@ -60,7 +52,42 @@
   {{else}}
     <p class="empty">This folder is empty.</p>
   {{end}}
-  </main>
+          </main>
+        </div>
+        <aside class="link-settings" aria-labelledby="link-settings-title">
+          <p class="eyebrow">Before you create</p>
+          <h3 id="link-settings-title">Link settings</h3>
+          <div class="link-field">
+            <label for="title">Title</label>
+            <input id="title" maxlength="80" placeholder="Optional" autocomplete="off">
+          </div>
+          <div class="link-field">
+            <label for="note">Note</label>
+            <input id="note" maxlength="240" placeholder="Optional, one sentence" autocomplete="off">
+          </div>
+          <div class="link-field">
+            <label for="idle">Idle timeout</label>
+            <select id="idle" aria-label="Idle timeout">
+              <option value="5">5 minutes without activity</option>
+              <option value="15" selected>15 minutes without activity</option>
+              <option value="30">30 minutes without activity</option>
+              <option value="60">1 hour without activity</option>
+              <option value="240">4 hours without activity</option>
+            </select>
+          </div>
+          <div class="link-field">
+            <label for="max">Maximum lifetime</label>
+            <select id="max" aria-label="Maximum lifetime">
+              <option value="30">30 minutes from now</option>
+              <option value="60" selected>1 hour from now</option>
+              <option value="240">4 hours from now</option>
+              <option value="720">12 hours from now</option>
+              <option value="1440">24 hours from now</option>
+            </select>
+          </div>
+          <p class="link-settings-hint">Each guest page view or download restarts the idle timer. The link still expires at the maximum lifetime.</p>
+        </aside>
+      </div>
     </div>
   </section>
 

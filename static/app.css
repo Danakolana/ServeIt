@@ -8,9 +8,10 @@ button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:6px}
 .wrap{max-width:920px;margin:0 auto;padding:0 20px 120px}
+.admin-wrap{max-width:1100px}
 .ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .ic.dir{color:var(--acc)}
-.top{display:flex;align-items:center;gap:16px;padding:20px 0 6px}
+.top{display:flex;align-items:center;gap:16px;padding:18px 0 14px;border-bottom:1px solid var(--line)}
 .top-actions{display:flex;align-items:center;gap:18px}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:-.02em}
 .mark{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:var(--acc);color:var(--on)}
@@ -31,7 +32,19 @@ button{cursor:pointer}
 .hint,.opts{color:var(--mut);margin-bottom:12px}
 .opts{line-height:2.2}
 .opts select{padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
-.labels{display:grid;gap:8px;margin:0 0 16px}.labels label{display:grid;gap:4px;font-size:12px;font-weight:650;color:var(--mut)}.labels input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
+.picker-layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.72fr);gap:20px;align-items:start}
+.picker-main{min-width:0}
+.picker-main .hint{margin-bottom:10px}
+.picker-main .admin-file-list{margin:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--bg)}
+.picker-main .admin-file-list .list th,.picker-main .admin-file-list .list td{padding-inline:14px}
+.link-settings{border:1px solid var(--line);border-radius:14px;background:var(--bg);padding:16px 18px;display:grid;gap:12px;box-shadow:0 8px 22px rgba(30,38,70,.06);position:sticky;top:12px}
+.link-settings h3{margin:0;font-size:16px;letter-spacing:-.02em}
+.link-settings .eyebrow{margin:0}
+.link-field{display:grid;gap:5px}
+.link-field label{font-size:12px;font-weight:650;color:var(--mut)}
+.link-field input,.link-field select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg)}
+.link-field select{cursor:pointer}
+.link-settings-hint{margin:0;font-size:12px;line-height:1.45;color:var(--mut)}
 .list tbody tr.kbd{outline:2px solid var(--acc);outline-offset:-2px}
 .guest-label{margin-bottom:16px}.guest-label h2{margin:0 0 6px}.guest-label p{margin:0;color:var(--mut)}
 .share-name{margin:0;font-weight:700}
@@ -77,7 +90,8 @@ dialog p.presence{word-break:normal;margin-top:0}
 dialog .acts{justify-content:center;margin:0}
 .foot{margin-top:40px;font-size:13px;color:var(--mut)}
 .foot a:hover{color:var(--acc)}
-@media(max-width:640px){.when{display:none}.wrap{padding-inline:14px}.top{flex-wrap:wrap}.search{order:3;flex-basis:100%;max-width:none;margin:0}.panel-head{padding:15px 16px}.panel-note{display:none}.panel-body{padding:15px 16px}.admin-file-list{margin:0 -16px -15px}.admin-file-list .list th,.admin-file-list .list td{padding-inline:14px}.shares-panel .panel-body{padding:10px}.share-top{align-items:flex-start;flex-direction:column}.share .acts{margin-inline-start:0;flex-wrap:wrap}.pk{width:44px}.pk input{width:44px;height:44px}.dock .btn{min-height:44px;min-width:44px}}
+@media(max-width:900px){.picker-layout{grid-template-columns:1fr}.link-settings{position:static}}
+@media(max-width:640px){.when{display:none}.wrap{padding-inline:14px}.top{flex-wrap:wrap}.search{order:3;flex-basis:100%;max-width:none;margin:0}.panel-head{padding:15px 16px}.panel-note{display:none}.panel-body{padding:15px 16px}.admin-file-list{margin:0 -16px -15px}.admin-file-list .list th,.admin-file-list .list td{padding-inline:14px}.picker-main .admin-file-list{margin:0}.shares-panel .panel-body{padding:10px}.share-top{align-items:flex-start;flex-direction:column}.share .acts{margin-inline-start:0;flex-wrap:wrap}.pk{width:44px}.pk input{width:44px;height:44px}.dock .btn{min-height:44px;min-width:44px}}
 @media(prefers-reduced-motion:reduce){.dock,#toast{transition:none}}
 
 /* Share cards use a distinct visual state so access is readable at a glance. */

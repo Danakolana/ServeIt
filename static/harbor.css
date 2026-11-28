@@ -57,6 +57,7 @@ button, input, select { color: inherit; font: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 7px; }
 .wrap { width: min(100% - 40px, 1040px); margin-inline: auto; padding: 0 0 112px; }
+.admin-wrap { width: min(100% - 40px, 1120px); }
 .ic { width: 18px; height: 18px; flex: none; vertical-align: -4px; }
 .ic.dir { color: var(--accent); }
 .top {
@@ -109,9 +110,25 @@ button { cursor: pointer; }
   padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px;
   background: var(--surface); color: var(--fg);
 }
-.labels { display: grid; gap: 8px; margin: 0 0 16px; }
-.labels label { display: grid; gap: 4px; color: var(--mut); font-size: 12px; font-weight: 750; }
-.labels input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--fg); font: inherit; }
+.picker-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .72fr); gap: 20px; align-items: start; }
+.picker-main { min-width: 0; }
+.picker-main .hint { margin-bottom: 10px; }
+.picker-main .admin-file-list { margin: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--line) 65%, transparent); }
+.picker-main .admin-file-list .list th, .picker-main .admin-file-list .list td { padding-inline: 14px; }
+.link-settings {
+  border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+  padding: 16px 18px; display: grid; gap: 12px; box-shadow: var(--shadow); position: sticky; top: 12px;
+}
+.link-settings h3 { margin: 0; font-size: 16px; letter-spacing: -.02em; }
+.link-settings .eyebrow { margin: 0; }
+.link-field { display: grid; gap: 5px; }
+.link-field label { color: var(--mut); font-size: 12px; font-weight: 750; }
+.link-field input, .link-field select {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--fg);
+}
+.link-field select { cursor: pointer; }
+.link-settings-hint { margin: 0; color: var(--mut); font-size: 12px; line-height: 1.45; }
 .list tbody tr.kbd td { box-shadow: inset 0 0 0 2px var(--accent); }
 .guest-label { margin-bottom: 16px; }
 .guest-label h2 { margin: 0 0 6px; }
@@ -227,6 +244,10 @@ dialog p.presence { overflow-wrap: normal; margin-top: 0; }
 dialog .acts { justify-content: center; margin: 0; }
 .foot { margin-top: 34px; color: var(--mut); font-size: 12px; }
 .foot a:hover { color: var(--accent-strong); }
+@media (max-width: 900px) {
+  .picker-layout { grid-template-columns: 1fr; }
+  .link-settings { position: static; }
+}
 @media (max-width: 680px) {
   .wrap { width: min(100% - 28px, 1040px); }
   .top { min-height: 66px; flex-wrap: wrap; gap: 12px; }
