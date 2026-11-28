@@ -194,3 +194,57 @@ ServeIt now handles SIGINT and SIGTERM explicitly. The first signal drains activ
 - Flush pending share-store activity before the graceful exit completes. Report flush or shutdown errors through the common logger and return a nonzero exit status when appropriate. **Implemented.**
 - Print one concise shutdown message stating that active transfers are draining and that a second Ctrl+C forces exit. Do not interleave routine request noise with the startup or shutdown panels. **Implemented.**
 - Add an integration test with a deliberately slow streaming response: confirm the first signal rejects new work but lets the active response finish, and confirm a second signal aborts it. Cover SIGTERM and persistence flushing without sending real signals to the main test process.
+
+## 16. Optional label on a guest link
+
+**Status: not started.**
+
+A guest page currently introduces itself with one fixed notice. The person who created the link should be able to say what the selection is, in the same short voice as the rest of the UI.
+
+- On the create-share form, add two optional fields: a title and one sentence. Both may be left blank.
+- When either is set, show it on the guest page above the file list. When both are blank, keep the current notice unchanged.
+- Cap the title at 80 characters and the sentence at 240. Reject anything longer at creation time. Store both on the share record.
+- The share URL stays a random token. Do not accept a custom path, slug, or link name.
+- Show the title on the admin share card when one was set, so the card is recognizable without reading the item list. Omit it when blank.
+
+## 17. Copy a guest link as Markdown
+
+**Status: not started.**
+
+The admin share card already copies the raw URL. The same card should also copy one Markdown link, for pasting into a chat or note.
+
+- Add one button, “Copy as Markdown”, beside the existing Copy action.
+- The copied text is a single line: `[title](url)` when the share has a title from item 16, otherwise `[Shared files](url)`.
+- No modal, preview, or format picker. Reuse the existing copy feedback.
+
+## 18. Say why a guest link is gone
+
+**Status: not started.**
+
+An expired link and a revoked link currently return the same plain-text error: “This share link has expired or was revoked.” A guest should see which of those two happened, on a page that belongs to the product.
+
+- Render a small page in the active theme. Expired says the link has expired. Revoked says the link was revoked. One sentence each. No file list, no countdown, no retry that implies the link might still work.
+- Unknown tokens stay “not found”. Do not use the expired or revoked page for a token that was never issued.
+- Use the same two messages for the guest download and ZIP endpoints, so a failed download does not contradict the page.
+- Keep the response status: gone for expired and revoked, not found for an unknown token.
+
+## 19. Keyboard selection in the file list
+
+**Status: not started.**
+
+The file tables already sort and already support multi-select with the pointer. The same list should be usable from the keyboard, without a new command system.
+
+- On the main browser, the admin picker, and the guest page: `j` and `k` move a visible row highlight, Space toggles that row’s checkbox, and Enter opens a directory or follows the file’s existing link.
+- Ignore these keys while focus is in an input, select, button, or other control.
+- The highlight is local to the current listing. Sorting and paging the selection must not clear checked rows.
+- No shortcut overlay and no second toolbar. If a hint fits the existing selection bar, one short line is enough.
+
+## 20. Keep multi-select reachable on a phone
+
+**Status: not started.**
+
+Guest links are opened from a QR code, usually on a phone. Classic, the default theme, puts the selection bar at the top of the table, so it scrolls away. Modern and Harbor already pin a dock; this item brings the default theme up to that job and makes the controls easier to hit.
+
+- On a narrow viewport, keep the selection count and the Download action on screen while the listing scrolls. Use the existing bar or the existing dock. Do not invent a third action pattern.
+- On all three listing pages, checkbox and primary-action hit areas are at least 44px on narrow viewports.
+- Do not add a grid view, file-type filters, or a second visual system. Sorting by name, size, and modified time already exists and stays as it is.
