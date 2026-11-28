@@ -65,9 +65,24 @@ jobs:
       - name: Verify go install from the release tag
         env:
           GOBIN: ${{ runner.temp }}/serveit-bin
+          # A new tag is not in the checksum database yet. That database also
+          # clones GitHub itself, and that fetch can fail while Actions can
+          # still reach the repository. Install this module from GitHub
+          # directly. Dependencies keep the normal proxy and checksum checks.
+          GOPROXY: https://proxy.golang.org,direct
+          GONOSUMDB: github.com/Danakolana/ServeIt
         run: |
           mkdir -p "$GOBIN"
-          go install github.com/Danakolana/ServeIt@${{ needs.meta.outputs.tag }}
+          tag="${{ needs.meta.outputs.tag }}"
+          installed=0
+          for attempt in 1 2 3; do
+            if go install "github.com/Danakolana/ServeIt@${tag}"; then
+              installed=1
+              break
+            fi
+            sleep $((attempt * 5))
+          done
+          test "$installed" -eq 1
           test -x "$GOBIN/ServeIt"
 
   build:
