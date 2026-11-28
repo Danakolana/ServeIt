@@ -299,6 +299,28 @@ func TestStartupAdminCredentialsCallout(t *testing.T) {
 	}
 }
 
+func TestStartupPairedQRCodesSameSize(t *testing.T) {
+	files := authorizedURL("http://192.168.0.8:8080", "")
+	admin := authorizedURL("http://192.168.0.8:8080/admin", "longer-admin-password-for-version-bump")
+	version := qrMatchedVersion(files, admin)
+	if version == 0 {
+		t.Fatal("could not resolve QR version")
+	}
+	left := qrColumn("Files", "", files, version)
+	right := qrColumn("Admin", "", admin, version)
+	if len(left) < 4 || len(right) < 4 {
+		t.Fatal("QR column missing art")
+	}
+	leftArt := left[3:]
+	rightArt := right[3:]
+	if len(leftArt) != len(rightArt) {
+		t.Fatalf("QR height mismatch: %d vs %d", len(leftArt), len(rightArt))
+	}
+	if columnWidth(leftArt) != columnWidth(rightArt) {
+		t.Fatalf("QR width mismatch: %d vs %d", columnWidth(leftArt), columnWidth(rightArt))
+	}
+}
+
 func TestStartupQREmbedsCredentialsForProtectedDoors(t *testing.T) {
 	if got, want := authorizedURL("http://192.168.1.20:8080/", ""), "http://192.168.1.20:8080/"; got != want {
 		t.Fatalf("open browser URL = %q, want %q", got, want)
@@ -309,8 +331,8 @@ func TestStartupQREmbedsCredentialsForProtectedDoors(t *testing.T) {
 	if got, want := authorizedURL("http://[fd00::1]:8080/admin", "secret"), "http://admin:secret@[fd00::1]:8080/admin"; got != want {
 		t.Fatalf("admin URL = %q, want %q", got, want)
 	}
-	plain := strings.Join(qrColumn("Files", "http://192.168.0.8:8080", "http://192.168.0.8:8080"), "\n")
-	locked := strings.Join(qrColumn("Files", "http://192.168.0.8:8080", authorizedURL("http://192.168.0.8:8080", "browser-secret")), "\n")
+	plain := strings.Join(qrColumn("Files", "http://192.168.0.8:8080", "http://192.168.0.8:8080", 0), "\n")
+	locked := strings.Join(qrColumn("Files", "http://192.168.0.8:8080", authorizedURL("http://192.168.0.8:8080", "browser-secret"), 0), "\n")
 	if plain == locked {
 		t.Fatal("file QR did not change when the browser password was included")
 	}

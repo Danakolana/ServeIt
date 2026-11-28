@@ -1348,8 +1348,11 @@ func startupHighlightBox(header string, rows [][2]string, width int, labelWidth 
 }
 
 func renderAddressBlock(base string, width int) string {
-	files := qrColumn("Files", base, authorizedURL(base, password))
-	admin := qrColumn("Admin", base+"/admin", authorizedURL(base+"/admin", adminPassword))
+	filesPayload := authorizedURL(base, password)
+	adminPayload := authorizedURL(base+"/admin", adminPassword)
+	version := qrMatchedVersion(filesPayload, adminPayload)
+	files := qrColumn("Files", base, filesPayload, version)
+	admin := qrColumn("Admin", base+"/admin", adminPayload, version)
 	gap := 4
 	pairedWidth := columnWidth(files) + gap + columnWidth(admin)
 	var lines []string
@@ -1385,9 +1388,31 @@ func authorizedURL(raw, secret string) string {
 	return parsed.String()
 }
 
-func qrColumn(title, caption, payload string) []string {
+// qrMatchedVersion picks the larger QR version needed so paired codes print the
+// same size in the terminal (version sets module count / ASCII dimensions).
+func qrMatchedVersion(payloads ...string) int {
+	version := 0
+	for _, payload := range payloads {
+		code, err := qrcode.New(payload, qrcode.Medium)
+		if err != nil {
+			continue
+		}
+		if code.VersionNumber > version {
+			version = code.VersionNumber
+		}
+	}
+	return version
+}
+
+func qrColumn(title, caption, payload string, version int) []string {
 	lines := []string{title, caption, ""}
-	code, err := qrcode.New(payload, qrcode.Medium)
+	var code *qrcode.QRCode
+	var err error
+	if version > 0 {
+		code, err = qrcode.NewWithForcedVersion(payload, version, qrcode.Medium)
+	} else {
+		code, err = qrcode.New(payload, qrcode.Medium)
+	}
 	if err != nil {
 		lines = append(lines, "(QR code unavailable)")
 		return lines
