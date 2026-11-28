@@ -1295,8 +1295,8 @@ func startupBox(title string, rows [][2]string, width int) string {
 }
 
 func renderAddressBlock(base string, width int) string {
-	files := qrColumn("Files", base)
-	admin := qrColumn("Admin", base+"/admin")
+	files := qrColumn("Files", base, authorizedURL(base, password))
+	admin := qrColumn("Admin", base+"/admin", authorizedURL(base+"/admin", adminPassword))
 	gap := 4
 	pairedWidth := columnWidth(files) + gap + columnWidth(admin)
 	var lines []string
@@ -1318,9 +1318,23 @@ func renderAddressBlock(base string, width int) string {
 	return out.String()
 }
 
-func qrColumn(title, address string) []string {
-	lines := []string{title, address, ""}
-	code, err := qrcode.New(address, qrcode.Medium)
+// authorizedURL puts the fixed basic-auth user into a QR payload so a scan
+// opens the page without a login prompt. An empty secret leaves the URL unchanged.
+func authorizedURL(raw, secret string) string {
+	if secret == "" {
+		return raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return raw
+	}
+	parsed.User = url.UserPassword("admin", secret)
+	return parsed.String()
+}
+
+func qrColumn(title, caption, payload string) []string {
+	lines := []string{title, caption, ""}
+	code, err := qrcode.New(payload, qrcode.Medium)
 	if err != nil {
 		lines = append(lines, "(QR code unavailable)")
 		return lines

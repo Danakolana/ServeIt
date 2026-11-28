@@ -283,6 +283,26 @@ func TestAllUITemplateSetsParseAndRender(t *testing.T) {
 	}
 }
 
+func TestStartupQREmbedsCredentialsForProtectedDoors(t *testing.T) {
+	if got, want := authorizedURL("http://192.168.1.20:8080/", ""), "http://192.168.1.20:8080/"; got != want {
+		t.Fatalf("open browser URL = %q, want %q", got, want)
+	}
+	if got, want := authorizedURL("http://192.168.1.20:8080/", "p@ss word"), "http://admin:p%40ss%20word@192.168.1.20:8080/"; got != want {
+		t.Fatalf("browser URL = %q, want %q", got, want)
+	}
+	if got, want := authorizedURL("http://[fd00::1]:8080/admin", "secret"), "http://admin:secret@[fd00::1]:8080/admin"; got != want {
+		t.Fatalf("admin URL = %q, want %q", got, want)
+	}
+	plain := strings.Join(qrColumn("Files", "http://192.168.0.8:8080", "http://192.168.0.8:8080"), "\n")
+	locked := strings.Join(qrColumn("Files", "http://192.168.0.8:8080", authorizedURL("http://192.168.0.8:8080", "browser-secret")), "\n")
+	if plain == locked {
+		t.Fatal("file QR did not change when the browser password was included")
+	}
+	if strings.Contains(locked, "browser-secret") {
+		t.Fatal("startup QR text printed the browser password; it belongs only in the code")
+	}
+}
+
 func TestShareLabelLimitsAndGonePages(t *testing.T) {
 	title, err := normalizeShareLabel("  Photos  ", maxShareTitleRunes, "Title")
 	if err != nil || title != "Photos" {
