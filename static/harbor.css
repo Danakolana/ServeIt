@@ -223,6 +223,7 @@ dialog {
 dialog::backdrop { background: rgba(5, 22, 21, .58); backdrop-filter: blur(3px); }
 dialog img { width: 240px; max-width: 100%; height: auto; padding: 8px; border-radius: 10px; background: #fff; }
 dialog p { margin: 12px 0 16px; color: var(--mut); font-size: 12px; overflow-wrap: anywhere; }
+dialog p.presence { overflow-wrap: normal; margin-top: 0; }
 dialog .acts { justify-content: center; margin: 0; }
 .foot { margin-top: 34px; color: var(--mut); font-size: 12px; }
 .foot a:hover { color: var(--accent-strong); }

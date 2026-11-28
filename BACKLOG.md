@@ -248,3 +248,14 @@ Guest links are opened from a QR code, usually on a phone. Classic, the default 
 - On a narrow viewport, keep the selection count and the Download action on screen while the listing scrolls. Use the existing bar or the existing dock. Do not invent a third action pattern.
 - On all three listing pages, checkbox and primary-action hit areas are at least 44px on narrow viewports.
 - Do not add a grid view, file-type filters, or a second visual system. Sorting by name, size, and modified time already exists and stays as it is.
+
+## 21. Show when someone opens the QR
+
+**Status: implemented.**
+
+The QR dialog is the moment a link is handed to someone in the room. It should confirm that the other person got in, using the view count ServeIt already stores.
+
+- While the dialog is open and the link has no page views, show one quiet line: “Waiting for someone to open it.”
+- When the view count is at least one, change that line to “Opened” and include the count. Keep the count current while the dialog stays open.
+- Check only while the dialog is open, then stop. Reuse the existing share list. Do not add a log, an IP address, or a name.
+- A link that was already opened shows “Opened” immediately. Closing the dialog removes the extra check.

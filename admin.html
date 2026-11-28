@@ -26,7 +26,7 @@ td.num{text-align:right;color:#64748b;font-variant-numeric:tabular-nums}.select-
 .share{border:1px solid #e2e8f0;border-radius:10px;padding:13px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}.share-url{font-size:.78rem;color:#475569;overflow-wrap:anywhere}
 .share-meta{display:flex;gap:12px;flex-wrap:wrap;font-size:.77rem;color:#64748b;margin-top:7px}.share-items{font-size:.78rem;color:#334155;margin-top:7px;overflow-wrap:anywhere}.actions{display:flex;gap:7px;align-items:start;flex-wrap:wrap}
 .badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:.7rem;font-weight:700;text-transform:uppercase}.active{background:#dcfce7;color:#166534}.expired{background:#f1f5f9;color:#475569}.revoked{background:#fee2e2;color:#991b1b}
-.modal{position:fixed;inset:0;background:rgba(15,23,42,.65);display:none;align-items:center;justify-content:center;padding:20px}.modal.open{display:flex}.modal-box{background:#fff;border-radius:14px;padding:20px;width:min(440px,100%);text-align:center}.modal img{width:256px;max-width:100%}.modal-url{font-size:.78rem;overflow-wrap:anywhere;color:#475569;margin:10px 0}.modal-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.65);display:none;align-items:center;justify-content:center;padding:20px}.modal.open{display:flex}.modal-box{background:#fff;border-radius:14px;padding:20px;width:min(440px,100%);text-align:center}.modal img{width:256px;max-width:100%}.modal-url{font-size:.78rem;overflow-wrap:anywhere;color:#475569;margin:10px 0}.modal-presence{margin:0 0 12px;min-height:1.2em;font-size:.84rem;color:#64748b}.modal-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .credit{margin-top:22px;display:flex;flex-wrap:wrap;align-items:baseline;font-size:.75rem;line-height:1.5;color:#94a3b8}
 .credit p{margin:0}.credit .mark{color:#64748b;font-weight:650;letter-spacing:.03em}
 .credit p+p::before{content:"·";margin:0 10px;color:#cbd5e1}
@@ -97,6 +97,7 @@ td.num{text-align:right;color:#64748b;font-variant-numeric:tabular-nums}.select-
     <h2>Share link QR code</h2>
     <img id="qr-image" alt="Share link QR code">
     <div id="modal-url" class="modal-url"></div>
+    <p id="modal-presence" class="modal-presence" aria-live="polite"></p>
     <div class="modal-actions">
       <button id="copy-modal" class="primary">Copy link</button>
       <button id="close-modal" class="secondary">Close</button>
@@ -201,6 +202,7 @@ async function loadShares() {
     if (!response.ok) throw new Error('Could not load links');
     shares = await response.json();
     renderShares();
+    showPresence();
   } catch (error) {
     document.getElementById('share-list').innerHTML = '<div class="empty error">' + escapeHTML(error.message) + '</div>';
   }
@@ -276,6 +278,37 @@ function fallbackCopy(text) {
     if (ok) resolve(); else reject(new Error('Copy failed'));
   });
 }
+var watchedShare = null;
+var watchTimer = 0;
+function presenceText(item) {
+  var count = item && item.PageViews || 0;
+  if (count < 1) return 'Waiting for someone to open it.';
+  return 'Opened · ' + count + (count === 1 ? ' view' : ' views');
+}
+function showPresence() {
+  var line = document.getElementById('modal-presence');
+  if (!line) return;
+  var modal = document.getElementById('qr-modal');
+  if (!watchedShare || !modal.classList.contains('open')) { line.textContent = ''; return; }
+  var fresh = shares.find(function(item){ return item.ID === watchedShare.ID; });
+  if (fresh) watchedShare = fresh;
+  line.textContent = presenceText(watchedShare);
+}
+function stopWatch() {
+  clearInterval(watchTimer);
+  watchTimer = 0;
+  watchedShare = null;
+  showPresence();
+}
+function startWatch(item) {
+  watchedShare = item;
+  showPresence();
+  clearInterval(watchTimer);
+  watchTimer = setInterval(async function(){
+    if (!document.getElementById('qr-modal').classList.contains('open')) { stopWatch(); return; }
+    await loadShares();
+  }, 2000);
+}
 async function openQR(item) {
   modalURL = item.URL;
   var image = document.getElementById('qr-image');
@@ -284,6 +317,7 @@ async function openQR(item) {
   document.getElementById('modal-url').textContent = item.URL;
   document.getElementById('copy-modal').textContent = 'Copy link';
   document.getElementById('qr-modal').classList.add('open');
+  startWatch(item);
   try {
     var response = await fetch(apiBase + '/api/admin/shares/' + encodeURIComponent(item.ID) + '/qr');
     var result = await response.json();
@@ -294,7 +328,7 @@ async function openQR(item) {
     image.alt = 'QR code unavailable';
   }
 }
-document.getElementById('close-modal').addEventListener('click', function(){ document.getElementById('qr-modal').classList.remove('open'); });
+document.getElementById('close-modal').addEventListener('click', function(){ document.getElementById('qr-modal').classList.remove('open'); stopWatch(); });
 document.getElementById('copy-modal').addEventListener('click', async function(){
   var button = this;
   try {
@@ -304,7 +338,7 @@ document.getElementById('copy-modal').addEventListener('click', async function()
     button.textContent = 'Copy failed';
   }
 });
-document.getElementById('qr-modal').addEventListener('click', function(event){ if(event.target === this) this.classList.remove('open'); });
+document.getElementById('qr-modal').addEventListener('click', function(event){ if(event.target === this) { this.classList.remove('open'); stopWatch(); } });
 setInterval(function(){
   var nodes = document.querySelectorAll('#share-list .remaining');
   shares.forEach(function(item, index){

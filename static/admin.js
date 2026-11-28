@@ -5,12 +5,24 @@ const statusLabel=s=>s.Status==='active'?'Active':s.Status==='expired'?'Expired'
 const markdown=s=>`[${String(s.Title||'Shared files').replace(/[\[\]]/g,'')}](${s.URL})`;
 const row=(s,i)=>`<article class="share share-${S.esc(s.Status)}"><div class="share-top"><div class="meta"><span class="status-mark" aria-hidden="true"></span><b class="badge ${S.esc(s.Status)}" data-i="${i}">${s.Status==='active'?S.dur(left(s))+' left':statusLabel(s)}</b><span class="status-copy">${statusCopy(s)}</span><span class="metric">${s.PageViews} views</span><span class="metric">${s.Downloads} downloads</span></div><div class="acts"><button class="btn sm ghost" data-a="copy" data-i="${i}">Copy</button><button class="btn sm ghost" data-a="md" data-i="${i}">Copy as Markdown</button><button class="btn sm ghost" data-a="qr" data-i="${i}">QR code</button>${s.Status==='active'?`<button class="btn sm ghost bad" data-a="rev" data-i="${i}">Revoke</button>`:''}</div></div>${s.Title?`<p class="share-name" dir="auto">${S.esc(s.Title)}</p>`:''}<div class="share-url"><span>Guest link</span><a class="url" href="${S.esc(s.URL)}" target="_blank" rel="noreferrer">${S.esc(s.URL)}</a></div><p class="items" dir="auto"><span>Shared items</span>${s.Items.map(f=>S.esc(f.Path)).join(', ')}</p></article>`;
 async function load(){
- try{const r=await fetch('/api/admin/shares',{headers:load.etag?{'If-None-Match':load.etag}:{}});if(r.status===304)return;if(!r.ok)throw 0;load.etag=r.headers.get('ETag')||'';list=await r.json();t0=performance.now();
-  $('#shares').innerHTML=list.length?list.map(row).join(''):'<p class="empty">No links yet. Pick files above and create one.</p>'}
- catch{$('#shares').innerHTML='<p class="empty">Could not load links.</p>'}}
+ try{const r=await fetch('/api/admin/shares',{headers:load.etag?{'If-None-Match':load.etag}:{}});if(r.status!==304){if(!r.ok)throw 0;load.etag=r.headers.get('ETag')||'';list=await r.json();t0=performance.now();
+  $('#shares').innerHTML=list.length?list.map(row).join(''):'<p class="empty">No links yet. Pick files above and create one.</p>'}}
+ catch{$('#shares').innerHTML='<p class="empty">Could not load links.</p>'}
+ showPresence()}
 const dlg=$('#qr'),qc=$('#qc');
+let watched=null,watchTimer=0;
+const presence=s=>{const n=s&&s.PageViews||0;return n<1?'Waiting for someone to open it.':'Opened · '+n+(n===1?' view':' views')};
+function showPresence(){
+ const el=$('#qo');if(!el)return;
+ if(!watched||!dlg.open){el.textContent='';return}
+ const fresh=list.find(s=>s.ID===watched.ID);if(fresh)watched=fresh;
+ el.textContent=presence(watched)}
+function startWatch(s){
+ watched=s;showPresence();clearInterval(watchTimer);
+ watchTimer=setInterval(()=>{if(!dlg.open){clearInterval(watchTimer);watchTimer=0;return}load()},2000)}
+function stopWatch(){clearInterval(watchTimer);watchTimer=0;watched=null;showPresence()}
 async function qr(s){
- cur=s.URL;$('#qu').textContent=s.URL;qc.textContent='Copy link';dlg.showModal();
+ cur=s.URL;$('#qu').textContent=s.URL;qc.textContent='Copy link';dlg.showModal();startWatch(s);
  if(s.QRDataURL){$('#qi').src=s.QRDataURL;return}
  $('#qi').removeAttribute('src');
  try{const r=await fetch('/api/admin/shares/'+encodeURIComponent(s.ID)+'/qr');const j=await r.json();if(!r.ok)throw 0;s.QRDataURL=j.QRDataURL;$('#qi').src=s.QRDataURL}
@@ -18,6 +30,7 @@ async function qr(s){
 }
 qc.onclick=async()=>{try{await S.copy(cur);qc.textContent='Copied'}catch{qc.textContent='Copy failed'}};
 $('#qx').onclick=()=>dlg.close();dlg.onclick=e=>{if(e.target===dlg)dlg.close()};
+dlg.addEventListener('close',stopWatch);
 $('#shares').onclick=async e=>{const b=e.target.closest('button');if(!b)return;const s=list[b.dataset.i],a=b.dataset.a;
  if(a==='copy'||a==='md'){try{await S.copy(a==='md'?markdown(s):s.URL);S.toast(a==='md'?'Markdown copied':'Link copied')}catch{S.toast('Copy failed. Select the link and copy it.',1)}}
  if(a==='qr')qr(s);

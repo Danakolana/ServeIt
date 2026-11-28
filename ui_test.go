@@ -389,6 +389,9 @@ func TestClassicThemeUsesLazyQRAndWorkingGuestDownloadTimer(t *testing.T) {
 	if strings.Contains(adminSource, "item.QRDataURL") {
 		t.Fatal("classic admin still assumes QRDataURL is present in the share list")
 	}
+	if !strings.Contains(adminSource, "Waiting for someone to open it.") || !strings.Contains(adminSource, "stopWatch") {
+		t.Fatal("classic QR dialog does not watch for the first guest view")
+	}
 
 	shareTemplate, err := os.ReadFile("share.html")
 	if err != nil {
